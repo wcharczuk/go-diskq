@@ -1,7 +1,6 @@
 package diskq
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
@@ -11,23 +10,30 @@ import (
 	"sync"
 )
 
-func New[A any](dataPath, offsetsPath string) (*Diskq[A], error) {
-	data, err := os.OpenFile(dataPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+func New[A any](cfg Config) (*Diskq[A], error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	data, err := os.OpenFile(cfg.DataPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("new diskq; cannot open data file; %w", err)
 	}
-	offsets, err := os.OpenFile(offsetsPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	offsets, err := os.OpenFile(cfg.OffsetsPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("new diskq; cannot open offsets file; %w", err)
 	}
 
-	offsetCurrentPosition, err := offsets.Seek(0, io.SeekCurrent)
+	offsetCurrentPosition, err := offsets.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, fmt.Errorf("new diskq; cannot find current offsets reader position; %w", err)
 	}
-
 	var offsetData OffsetData
 	if offsetCurrentPosition > 0 {
+		offsetSize := int64(binary.Size(offsetData))
+		_, err = offsets.Seek(-offsetSize, io.SeekEnd)
+		if err != nil {
+			return nil, fmt.Errorf("new diskq; cannot seek to last offset; %w", err)
+		}
 		err = binary.Read(offsets, binary.LittleEndian, &offsetData)
 		if err != nil {
 			if err == io.EOF {
@@ -37,7 +43,6 @@ func New[A any](dataPath, offsetsPath string) (*Diskq[A], error) {
 			}
 		}
 	}
-
 	lastOffset := offsetData[0]
 	_, err = offsets.Seek(offsetCurrentPosition, io.SeekStart)
 	if err != nil {
@@ -94,121 +99,4 @@ func (dq *Diskq[A]) Close() error {
 	_ = dq.data.Close()
 	_ = dq.offsets.Close()
 	return nil
-}
-
-func GetOffset[A any](dataPath, offsetsPath string, offset int) (v A, ok bool, err error) {
-	var data *os.File
-	data, err = os.OpenFile(dataPath, os.O_RDONLY, 0)
-	if err != nil {
-		return
-	}
-	defer data.Close()
-
-	var offsets *os.File
-	offsets, err = os.OpenFile(offsetsPath, os.O_RDONLY, 0)
-	if err != nil {
-		return
-	}
-	defer offsets.Close()
-
-	var offsetData OffsetData
-	seekAt := binary.Size(offsetData) * offset
-
-	_, err = offsets.Seek(int64(seekAt), io.SeekStart)
-	if err != nil {
-		return
-	}
-
-	err = binary.Read(offsets, binary.LittleEndian, &offsetData)
-	if err != nil {
-		return
-	}
-
-	_, err = data.Seek(int64(offsetData[1]), io.SeekStart)
-	if err != nil {
-		return
-	}
-
-	readBuffer := make([]byte, int(offsetData[2]))
-	_, err = data.Read(readBuffer)
-	if err != nil {
-		return
-	}
-
-	err = gob.NewDecoder(bytes.NewReader(readBuffer)).Decode(&v)
-	if err != nil {
-		return
-	}
-	ok = true
-	return
-}
-
-func NewIter[A any](dataPath, offsetsPath string) (*Iter[A], error) {
-	data, err := os.OpenFile(dataPath, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	offsets, err := os.OpenFile(offsetsPath, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	return &Iter[A]{
-		data:    data,
-		offsets: offsets,
-	}, nil
-}
-
-type Iter[A any] struct {
-	data       *os.File
-	offsets    *os.File
-	readBuffer []byte
-}
-
-func (dqi *Iter[A]) Next() (v A, ok bool, err error) {
-	var offsetData OffsetData
-	err = binary.Read(dqi.offsets, binary.LittleEndian, &offsetData)
-	if err != nil {
-		if err == io.EOF {
-			err = nil
-			ok = false
-			return
-		}
-		err = fmt.Errorf("iterator next; reading offset data; %w", err)
-		return
-	}
-	dqi.readBuffer = make([]byte, offsetData[2])
-	_, err = dqi.data.Read(dqi.readBuffer)
-	if err != nil {
-		if err == io.EOF {
-			err = nil
-			ok = false
-			return
-		}
-		err = fmt.Errorf("iterator next; reading message data; %w", err)
-		return
-	}
-	err = gob.NewDecoder(bytes.NewReader(dqi.readBuffer)).Decode(&v)
-	if err != nil {
-		err = fmt.Errorf("iterator next; decoding message; %w", err)
-		return
-	}
-	ok = true
-	return
-}
-
-func (dqi *Iter[A]) Close() error {
-	_ = dqi.data.Close()
-	_ = dqi.offsets.Close()
-	return nil
-}
-
-type DiskqNotifer[A any] struct {
-	data       *os.File
-	dataReader *bufio.Reader
-	seekBuffer []byte
-	notify     chan A
-}
-
-func (dqn *DiskqNotifer[A]) Notify() <-chan A {
-	return dqn.notify
 }

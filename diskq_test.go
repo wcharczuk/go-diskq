@@ -15,13 +15,18 @@ type Measurement struct {
 	PM25  float64
 }
 
+var testConfig = Config{
+	DataPath:    "test.dq",
+	OffsetsPath: "test.off.dq",
+}
+
 func Test_Diskq(t *testing.T) {
-	dq, err := New[Measurement]("test.dq", "test.off.dq")
+	dq, err := New[Measurement](testConfig)
 	testutil.NoError(t, err)
 	defer func() {
 		_ = dq.Close()
-		_ = os.Remove("test.dq")
-		_ = os.Remove("test.off.dq")
+		_ = os.Remove(testConfig.DataPath)
+		_ = os.Remove(testConfig.OffsetsPath)
 	}()
 
 	err = dq.Push(Measurement{
@@ -51,7 +56,7 @@ func Test_Diskq(t *testing.T) {
 	})
 	testutil.NoError(t, err)
 
-	iter, err := NewIter[Measurement]("test.dq", "test.off.dq")
+	iter, err := NewIter[Measurement](testConfig)
 	testutil.NoError(t, err)
 	defer iter.Close()
 
@@ -69,7 +74,7 @@ func Test_Diskq(t *testing.T) {
 		testutil.NoError(t, err)
 	}
 
-	m, ok, err = GetOffset[Measurement]("test.dq", "test.off.dq", 1)
+	m, ok, err = GetOffset[Measurement](testConfig, 1)
 	testutil.NoError(t, err)
 	testutil.Equal(t, true, ok)
 	testutil.Equal(t, "second", m.Name)
@@ -80,13 +85,16 @@ func Test_Diskq(t *testing.T) {
 }
 
 func Test_Diskq_resume(t *testing.T) {
-	dq, err := New[Measurement]("test2.dq", "test2.off.dq")
+	testConfig2 := Config{
+		DataPath:    "test2.dq",
+		OffsetsPath: "test2.off.dq",
+	}
+	dq, err := New[Measurement](testConfig2)
 	testutil.NoError(t, err)
 	defer func() {
 		_ = os.Remove("test2.dq")
 		_ = os.Remove("test2.off.dq")
 	}()
-
 	err = dq.Push(Measurement{
 		Name:  "first",
 		Temp:  1,
@@ -115,9 +123,19 @@ func Test_Diskq_resume(t *testing.T) {
 	testutil.NoError(t, err)
 	_ = dq.Close()
 
-	dq2, err := New[Measurement]("test2.dq", "test2.off.dq")
+	dq2, err := New[Measurement](testConfig2)
 	testutil.NoError(t, err)
 	defer dq2.Close()
 
 	testutil.Equal(t, 2, dq2.offset)
+
+	err = dq2.Push(Measurement{
+		Name:  "fourth",
+		Temp:  4,
+		Humid: 5,
+		CO2:   6,
+		PM25:  7,
+	})
+	testutil.NoError(t, err)
+	testutil.Equal(t, 3, dq2.offset)
 }
