@@ -1,30 +1,46 @@
 package diskq
 
 import (
+	"hash/fnv"
 	"sync"
 )
 
-func New[A any](cfg Config, encoder Encoder[A]) (*Diskq[A], error) {
+func CreateOrOpen(cfg Config) (*Diskq, error) {
 	return nil, nil
 }
 
-type Diskq[A any] struct {
+type Diskq struct {
 	mu         sync.RWMutex
+	cfg        Config
 	partitions []Partition
 }
 
-func (dq *Diskq[A]) Push(value A) (offset int64, err error) {
+func (dq *Diskq) Push(value Message) (offset int64, err error) {
 	return
 }
 
-func (dq *Diskq[A]) GetOffset(offset int) (v A, ok bool, err error) {
+func (dq *Diskq) GetOffset(offset int) (v Message, ok bool, err error) {
 	return
 }
 
-// Vacuum applies retention policies, if configured.
-//
-// Vacuum will _not_ apply retention to the current segment
-// if there are no other, closed segments.
-func (dq *Diskq[A]) Vacuum() (err error) {
+func (dq *Diskq) Consume(startAtOffset int) (c *Consumer, err error) {
 	return
+}
+
+func (dq *Diskq) Vacuum() (err error) {
+	return
+}
+
+func (dq *Diskq) partitionForMessage(m *Message) *Partition {
+	hashIndex := dq.hashIndexForMessage(m)
+	if hashIndex < 0 || len(dq.partitions) >= hashIndex {
+		return nil
+	}
+	return &dq.partitions[hashIndex]
+}
+
+func (dq *Diskq) hashIndexForMessage(m *Message) int {
+	h := fnv.New32()
+	_, _ = h.Write([]byte(m.PartitionKey))
+	return int(h.Sum32()) % len(dq.partitions)
 }
