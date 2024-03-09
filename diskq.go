@@ -26,23 +26,30 @@ type Diskq struct {
 	partitions []*Partition
 }
 
-func (dq *Diskq) Push(value *Message) (offset uint64, err error) {
+func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error) {
 	if value.PartitionKey == "" {
 		value.PartitionKey = UUIDv4().String()
 	}
 	if value.TimestampUTC.IsZero() {
 		value.TimestampUTC = time.Now().UTC()
 	}
-	partition := dq.partitionForMessage(value)
-	if partition == nil {
+	p := dq.partitionForMessage(value)
+	if p == nil {
 		err = fmt.Errorf("diskq; partition couldn't be resolved for message")
 		return
 	}
-	offset, err = partition.Write(value)
+	offset, err = p.Write(value)
+	if err != nil {
+		return
+	}
+	partition = p.index
 	return
 }
 
 func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok bool, err error) {
+	if partitionIndex >= uint32(len(dq.partitions)) {
+		return
+	}
 	v, ok, err = dq.partitions[partitionIndex].GetOffset(offset)
 	return
 }
@@ -65,7 +72,11 @@ func (dq *Diskq) Vacuum() (err error) {
 	return
 }
 
-func (dq *Diskq) partitionForMessage(m *Message) *Partition {
+//
+// internal helpers
+//
+
+func (dq *Diskq) partitionForMessage(m Message) *Partition {
 	hashIndex := dq.hashIndexForMessage(m)
 	if hashIndex < 0 || hashIndex >= len(dq.partitions) {
 		return nil
@@ -73,7 +84,7 @@ func (dq *Diskq) partitionForMessage(m *Message) *Partition {
 	return dq.partitions[hashIndex]
 }
 
-func (dq *Diskq) hashIndexForMessage(m *Message) int {
+func (dq *Diskq) hashIndexForMessage(m Message) int {
 	h := fnv.New32()
 	_, _ = h.Write([]byte(m.PartitionKey))
 	return int(h.Sum32()) % len(dq.partitions)

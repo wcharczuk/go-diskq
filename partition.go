@@ -75,20 +75,19 @@ type Partition struct {
 
 func (p *Partition) GetOffset(offset uint64) (m Message, ok bool, err error) {
 	p.mu.Lock()
-	defer p.mu.Lock()
-	var segment *Segment
-	segment, err = p.getSegmentForOffsetUnsafe(offset)
-	if err != nil || segment == nil {
+	defer p.mu.Unlock()
+	startOffset, ok, err := p.getSegmentForOffsetUnsafe(offset)
+	if err != nil || !ok {
 		// there can be an issue with reading the dir entries
 		// - or -
 		// the offset could belong to a vacuumed segment
 		return
 	}
-	m, ok, err = segment.getOffsetUnsafe(offset)
+	m, ok, err = getSegmentOffset(p.cfg, p.index, startOffset, offset)
 	return
 }
 
-func (p *Partition) Write(message *Message) (offset uint64, err error) {
+func (p *Partition) Write(message Message) (offset uint64, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if offset, err = p.activeSegment.writeUnsafe(message); err != nil {
@@ -113,26 +112,26 @@ func (p *Partition) Vacuum() error {
 	if err != nil {
 		return err
 	}
-	for _, offset := range segmentOffsets {
+	for _, startOffset := range segmentOffsets {
 		if p.cfg.RetentionMaxAge > 0 {
-			doVacuumSegment, err := shouldVacuumSegmentByAge(p.cfg, p.index, offset)
+			doVacuumSegment, err := p.shouldVacuumSegmentByAge(startOffset)
 			if err != nil {
 				return err
 			}
 			if doVacuumSegment {
-				if err := vacuumSegment(p.cfg, p.index, offset); err != nil {
+				if err := p.vacuumSegment(startOffset); err != nil {
 					return err
 				}
 				continue
 			}
 		}
 		if p.cfg.RetentionMaxBytes > 0 {
-			partitionSizeBytes, err := getPartitionSizeBytes(p.cfg, p.index)
+			partitionSizeBytes, err := p.getSizeBytes()
 			if err != nil {
 				return err
 			}
 			if partitionSizeBytes > p.cfg.RetentionMaxBytes {
-				if err := vacuumSegment(p.cfg, p.index, offset); err != nil {
+				if err := p.vacuumSegment(startOffset); err != nil {
 					return err
 				}
 				continue
@@ -145,7 +144,9 @@ func (p *Partition) Vacuum() error {
 func (p *Partition) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_ = p.activeSegment.Close()
+	if p.activeSegment != nil {
+		_ = p.activeSegment.Close()
+	}
 	return nil
 }
 
@@ -153,23 +154,18 @@ func (p *Partition) Close() error {
 // internal
 //
 
-func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (*Segment, error) {
-	if p.activeSegment.startOffset >= offset {
-		return p.activeSegment, nil
-	}
+func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (uint64, bool, error) {
 	entries, err := getPartitionSegmentOffsets(p.cfg, p.index)
 	if err != nil {
-		return nil, err
+		return 0, false, err
 	}
-	if len(entries) == 0 {
-		return nil, nil
-	}
-	for _, startOffset := range entries {
-		if startOffset >= offset {
-			return OpenSegment(p.cfg, p.index, startOffset)
+	for x := len(entries) - 1; x >= 0; x-- {
+		startOffset := entries[x]
+		if startOffset <= offset {
+			return startOffset, true, nil
 		}
 	}
-	return nil, nil
+	return 0, false, nil
 }
 
 func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, error) {
@@ -216,19 +212,19 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 // vacuum utils
 //
 
-func shouldVacuumSegmentByAge(cfg Config, partitionIndex uint32, offset uint64) (doVacuumSegment bool, err error) {
+func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = getSegmentTimestamp(cfg, partitionIndex, offset, -int64(segmentTimeIndexSize), io.SeekEnd)
+	endTimestamp, err = p.getSegmentEndTimestamp(startOffset)
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().UTC().Add(-cfg.RetentionMaxAge)
+	cutoff := time.Now().UTC().Add(-p.cfg.RetentionMaxAge)
 	doVacuumSegment = endTimestamp.Before(cutoff)
 	return
 }
 
-func vacuumSegment(cfg Config, partitionIndex uint32, offset uint64) error {
-	segmentRoot := formatPathForSegment(cfg, partitionIndex, offset)
+func (p *Partition) vacuumSegment(startOffset uint64) error {
+	segmentRoot := formatPathForSegment(p.cfg, p.index, startOffset)
 	if err := os.Remove(segmentRoot + ".data"); err != nil {
 		return err
 	}
@@ -241,30 +237,30 @@ func vacuumSegment(cfg Config, partitionIndex uint32, offset uint64) error {
 	return nil
 }
 
-func getSegmentTimestamp(cfg Config, partitionIndex uint32, offset uint64, byteOffset int64, whence int) (ts time.Time, err error) {
+func (p *Partition) getSegmentEndTimestamp(startOffset uint64) (ts time.Time, err error) {
 	var segment segmentTimeIndex
 	var f *os.File
-	f, err = os.Open(formatPathForSegment(cfg, partitionIndex, offset) + ".timeindex")
+	f, err = os.Open(formatPathForSegment(p.cfg, p.index, startOffset) + ".timeindex")
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	if _, err = f.Seek(byteOffset, whence); err != nil {
+	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
 		return
 	}
 	ts = segment.GetTimestampUTC()
 	return
 }
 
-func getPartitionSizeBytes(cfg Config, partitionIndex uint32) (sizeBytes int64, err error) {
+func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 	var offsets []uint64
-	offsets, err = getPartitionSegmentOffsets(cfg, partitionIndex)
+	offsets, err = getPartitionSegmentOffsets(p.cfg, p.index)
 	if err != nil {
 		return
 	}
 	var info fs.FileInfo
 	for _, offset := range offsets {
-		segmentRoot := formatPathForSegment(cfg, partitionIndex, offset)
+		segmentRoot := formatPathForSegment(p.cfg, p.index, offset)
 
 		info, err = os.Stat(segmentRoot + ".data")
 		if err != nil {

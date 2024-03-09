@@ -1,14 +1,32 @@
 package diskq
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func tempDir() (string, func()) {
+	dir := filepath.Join(os.TempDir(), UUIDv4().String())
+	_ = os.Mkdir(dir, 0755)
+	return dir, func() {
+		_ = os.RemoveAll(dir)
+	}
+}
 
 func assert_noerror(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Errorf("expected err to be unset; %v", err)
+		t.FailNow()
+	}
+}
+
+func assert_notnil(t *testing.T, a any) {
+	t.Helper()
+	if isNil(a) {
+		t.Errorf("expected value to not be nil")
 		t.FailNow()
 	}
 }
