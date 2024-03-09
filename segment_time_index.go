@@ -16,7 +16,7 @@ func (sti segmentTimeIndex) GetOffset() uint64 {
 }
 
 func (sti segmentTimeIndex) GetTimestampUTC() time.Time {
-	return time.Unix(0, int64(sti[1]))
+	return time.Unix(0, int64(sti[1])).UTC()
 }
 
 var segmentTimeIndexSize = binary.Size(segmentTimeIndex{})

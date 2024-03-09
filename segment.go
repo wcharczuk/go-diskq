@@ -60,7 +60,9 @@ func OpenSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segmen
 	if err != nil {
 		return nil, err
 	}
-	endOffset := uint64(endIndexBytes / int64(binary.Size(segmentIndex{})))
+
+	endOffset := startOffset + uint64(endIndexBytes/int64(binary.Size(segmentIndex{})))
+
 	encodeBuffer := new(bytes.Buffer)
 	return &Segment{
 		data:           data,

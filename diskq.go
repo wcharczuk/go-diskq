@@ -11,7 +11,7 @@ func New(cfg Config) (*Diskq, error) {
 	d := &Diskq{
 		cfg: cfg,
 	}
-	for partitionIndex := 0; partitionIndex < int(cfg.PartitionCount); partitionIndex++ {
+	for partitionIndex := 0; partitionIndex < int(cfg.PartitionCountOrDefault()); partitionIndex++ {
 		p, err := NewPartition(cfg, uint32(partitionIndex))
 		if err != nil {
 			return nil, err
@@ -70,6 +70,13 @@ func (dq *Diskq) Vacuum() (err error) {
 		}
 	}
 	return
+}
+
+func (dq *Diskq) Close() error {
+	for _, p := range dq.partitions {
+		_ = p.Close()
+	}
+	return nil
 }
 
 //

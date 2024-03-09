@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/fs"
@@ -52,8 +53,8 @@ func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 	}
 
 	lastDirEntry := dirEntries[len(dirEntries)-1]
-	filepathBase := filepath.Base(lastDirEntry.Name())
-	rawStartOffset := strings.TrimSuffix(filepathBase, filepath.Ext(filepathBase))
+	lastDirEntryBase := filepath.Base(lastDirEntry.Name())
+	rawStartOffset := strings.TrimSuffix(lastDirEntryBase, filepath.Ext(lastDirEntryBase))
 	lastSegmentStartOffset, err := strconv.ParseInt(rawStartOffset, 10, 64)
 	if err != nil {
 		return nil, err
@@ -112,7 +113,13 @@ func (p *Partition) Vacuum() error {
 	if err != nil {
 		return err
 	}
+
+	activeOffset := p.activeSegment.startOffset
+
 	for _, startOffset := range segmentOffsets {
+		if startOffset == activeOffset {
+			return nil
+		}
 		if p.cfg.RetentionMaxAge > 0 {
 			doVacuumSegment, err := p.shouldVacuumSegmentByAge(startOffset)
 			if err != nil {
@@ -196,7 +203,7 @@ func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, er
 }
 
 func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
-	return int64(segment.endOffsetBytes) > p.cfg.SegmentSizeBytes
+	return int64(segment.endOffsetBytes) > p.cfg.SegmentSizeBytesOrDefault()
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
@@ -245,9 +252,15 @@ func (p *Partition) getSegmentEndTimestamp(startOffset uint64) (ts time.Time, er
 		return
 	}
 	defer f.Close()
-	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
+	if _, err = f.Seek(0, io.SeekStart); err != nil {
 		return
 	}
+
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+
 	ts = segment.GetTimestampUTC()
 	return
 }
