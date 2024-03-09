@@ -19,6 +19,8 @@ func main() {
 		Path: tempPath,
 	}
 
+	fmt.Printf("using temp path: %s\n", tempPath)
+
 	dq, err := diskq.New(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
