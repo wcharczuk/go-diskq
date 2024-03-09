@@ -54,8 +54,8 @@ func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok 
 	return
 }
 
-func (dq *Diskq) Consume(startAtOffset int) (msgs <-chan Message, err error) {
-	return
+func (dq *Diskq) Consume(partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
+	return openConsumer(dq.cfg, partitionIndex, options)
 }
 
 // Vacuum deletes old segments from all partitions

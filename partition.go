@@ -6,8 +6,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,10 +50,7 @@ func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 		return nil, fmt.Errorf("diskq; empty partition directory")
 	}
 
-	lastDirEntry := dirEntries[len(dirEntries)-1]
-	lastDirEntryBase := filepath.Base(lastDirEntry.Name())
-	rawStartOffset := strings.TrimSuffix(lastDirEntryBase, filepath.Ext(lastDirEntryBase))
-	lastSegmentStartOffset, err := strconv.ParseInt(rawStartOffset, 10, 64)
+	lastSegmentStartOffset, err := parseSegmentOffsetFromPath(dirEntries[len(dirEntries)-1].Name())
 	if err != nil {
 		return nil, err
 	}
@@ -161,45 +156,14 @@ func (p *Partition) Close() error {
 // internal
 //
 
-func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (uint64, bool, error) {
-	entries, err := getPartitionSegmentOffsets(p.cfg, p.index)
+func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (startOffset uint64, ok bool, err error) {
+	var entries []uint64
+	entries, err = getPartitionSegmentOffsets(p.cfg, p.index)
 	if err != nil {
-		return 0, false, err
+		return
 	}
-	for x := len(entries) - 1; x >= 0; x-- {
-		startOffset := entries[x]
-		if startOffset <= offset {
-			return startOffset, true, nil
-		}
-	}
-	return 0, false, nil
-}
-
-func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, error) {
-	entries, err := os.ReadDir(formatPathForPartition(cfg, partitionIndex))
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, nil
-	}
-	var output []uint64
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if !strings.HasSuffix(e.Name(), ".data") {
-			continue
-		}
-		filepathBase := filepath.Base(e.Name())
-		rawStartOffset := strings.TrimSuffix(filepathBase, filepath.Ext(filepathBase))
-		segmentStartOffset, err := strconv.ParseUint(rawStartOffset, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		output = append(output, segmentStartOffset)
-	}
-	return output, nil
+	startOffset, ok = getSegmentStartOffsetForOffset(entries, offset)
+	return
 }
 
 func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
@@ -207,7 +171,7 @@ func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
-	newActive, err := CreateSegment(p.cfg, p.index, p.activeSegment.endOffset+1)
+	newActive, err := CreateSegment(p.cfg, p.index, p.activeSegment.endOffset)
 	if err != nil {
 		return err
 	}
@@ -232,13 +196,13 @@ func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegmen
 
 func (p *Partition) vacuumSegment(startOffset uint64) error {
 	segmentRoot := formatPathForSegment(p.cfg, p.index, startOffset)
-	if err := os.Remove(segmentRoot + ".data"); err != nil {
+	if err := os.Remove(segmentRoot + extData); err != nil {
 		return err
 	}
-	if err := os.Remove(segmentRoot + ".index"); err != nil {
+	if err := os.Remove(segmentRoot + extIndex); err != nil {
 		return err
 	}
-	if err := os.Remove(segmentRoot + ".timeindex"); err != nil {
+	if err := os.Remove(segmentRoot + extTimeIndex); err != nil {
 		return err
 	}
 	return nil
@@ -247,7 +211,7 @@ func (p *Partition) vacuumSegment(startOffset uint64) error {
 func (p *Partition) getSegmentEndTimestamp(startOffset uint64) (ts time.Time, err error) {
 	var segment segmentTimeIndex
 	var f *os.File
-	f, err = os.Open(formatPathForSegment(p.cfg, p.index, startOffset) + ".timeindex")
+	f, err = os.Open(formatPathForSegment(p.cfg, p.index, startOffset) + extTimeIndex)
 	if err != nil {
 		return
 	}
@@ -274,12 +238,46 @@ func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 	var info fs.FileInfo
 	for _, offset := range offsets {
 		segmentRoot := formatPathForSegment(p.cfg, p.index, offset)
-
-		info, err = os.Stat(segmentRoot + ".data")
+		info, err = os.Stat(segmentRoot + extData)
 		if err != nil {
 			return
 		}
 		sizeBytes += info.Size()
 	}
 	return
+}
+
+func getSegmentStartOffsetForOffset(entries []uint64, offset uint64) (uint64, bool) {
+	for x := len(entries) - 1; x >= 0; x-- {
+		startOffset := entries[x]
+		if startOffset <= offset {
+			return startOffset, true
+		}
+	}
+	return 0, false
+}
+
+func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, error) {
+	entries, err := os.ReadDir(formatPathForPartition(cfg, partitionIndex))
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	var output []uint64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), extData) {
+			continue
+		}
+		segmentStartOffset, err := parseSegmentOffsetFromPath(e.Name())
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, segmentStartOffset)
+	}
+	return output, nil
 }
