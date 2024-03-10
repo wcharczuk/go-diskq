@@ -24,7 +24,7 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		return nil, err
 	}
 	var notify *fsnotify.Watcher
-	if options.EndAtOffset != uint64(ConsumerEndAndClose) {
+	if options.EndBehavior != ConsumerEndAndClose {
 		notify, err = fsnotify.NewWatcher()
 		if err != nil {
 			return nil, err
@@ -197,9 +197,9 @@ func (c *Consumer) read() {
 	defer c.Close()
 
 	partitionPath := formatPathForPartition(c.cfg, c.partitionIndex)
-	var workingSegmentData segmentIndex
 
-	if c.options.EndBehavior == ConsumerEndAndWait {
+	var workingSegmentData segmentIndex
+	if c.options.EndBehavior != ConsumerEndAndClose {
 		go c.listenForFilesystemEvents()
 	}
 
@@ -217,8 +217,11 @@ func (c *Consumer) read() {
 		return
 	}
 
-	workingSegment, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
-	atomic.StoreUint64(&c.workingSegment, workingSegment)
+	workingSegmentOffset, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
+	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
+
+	fmt.Println("consumer starting at", c.workingSegment, effectiveConsumeAtOffset)
+
 	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot open index file: %w", err))
@@ -230,7 +233,7 @@ func (c *Consumer) read() {
 		return
 	}
 
-	if c.options.EndBehavior == ConsumerEndAndWait {
+	if c.options.EndBehavior != ConsumerEndAndClose {
 		err = c.notify.Add(partitionPath)
 		if err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot watch partition path: %w", err))
@@ -292,7 +295,7 @@ func (c *Consumer) read() {
 			return
 		}
 
-		ok, err = c.readNextSegmentIndex(&workingSegmentData)
+		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites(&workingSegmentData)
 		if err != nil {
 			c.error(err)
 			return
@@ -377,18 +380,27 @@ func (c *Consumer) readNextSegmentIndex(workingSegmentData *segmentIndex) (ok bo
 	if err != nil {
 		return
 	}
+
 	if (indexStat.Size() - indexPosition) < int64(segmentIndexSize) {
 		if c.isReadingActiveSegment() {
 			ok, err = c.waitForNewOffset(workingSegmentData)
 			return
 		}
-
 		ok, err = c.advanceToNextSegment(workingSegmentData)
 		return
 	}
 
 	if err = binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData); err != nil {
 		err = fmt.Errorf("cannot read next working segment index: %w", err)
+		return
+	}
+	ok = true
+	return
+}
+
+func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites(workingSegmentData *segmentIndex) (ok bool, err error) {
+	ok, err = c.readNextSegmentIndex(workingSegmentData)
+	if err != nil || !ok {
 		return
 	}
 	ok, err = c.maybeWaitForDataWriteEvents(workingSegmentData)

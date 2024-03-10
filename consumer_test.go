@@ -72,6 +72,10 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 		assert_equal(t, x, offset)
 	}
 
+	entries, err := getPartitionSegmentOffsets(cfg, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 6, len(entries))
+
 	c, err := dq.Consume(0, ConsumerOptions{
 		StartAtBehavior: ConsumerStartAtActiveSegmentLatest,
 	})

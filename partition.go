@@ -263,6 +263,7 @@ func getSegmentEndOffset(cfg Config, partitionIndex uint32, startOffset uint64) 
 
 	fsize := fstat.Size()
 	if fsize < int64(segmentIndexSize) {
+		err = io.ErrShortBuffer
 		return
 	}
 
