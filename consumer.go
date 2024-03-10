@@ -29,9 +29,9 @@ func openConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		messages:         make(chan MessageWithOffset),
 		errors:           make(chan error, 1),
 		done:             make(chan struct{}),
-		advanceEvents:    make(chan struct{}, 32),
-		indexWriteEvents: make(chan struct{}, 32),
-		dataWriteEvents:  make(chan struct{}, 32),
+		advanceEvents:    make(chan struct{}, 1),
+		indexWriteEvents: make(chan struct{}, 1),
+		dataWriteEvents:  make(chan struct{}, 1),
 		notify:           notify,
 	}
 	go c.read()
@@ -120,9 +120,6 @@ func (c *Consumer) read() {
 	// fsnotify loop
 	go func() {
 		for {
-			if c.indexHandle == nil || c.dataHandle == nil {
-				return
-			}
 			select {
 			case event, ok := <-c.notify.Events:
 				if !ok {
@@ -224,6 +221,7 @@ func (c *Consumer) read() {
 		if c.isActiveSegment() {
 			ok, err = c.waitForNewOffset(&workingSegmentData)
 			if err != nil {
+				tracef("%d | before runloop wait for new offset error", c.partitionIndex)
 				c.error(err)
 				return
 			}
@@ -238,20 +236,24 @@ func (c *Consumer) read() {
 		c.error(fmt.Errorf("diskq; consumer; cannot seek data file: %w", err))
 		return
 	}
+
 	var m Message
 	for {
 		data := make([]byte, workingSegmentData.GetSizeBytes())
 		if _, err = c.dataHandle.Read(data); err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot read data file: %w", err))
+			tracef("%d | exiting data read error", c.partitionIndex)
 			return
 		}
 		if err = Decode(&m, bytes.NewReader(data)); err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot decode message from data file: %w", err))
+			tracef("%d | exiting data decode", c.partitionIndex)
 			return
 		}
 
 		select {
 		case <-c.done:
+			tracef("%d | exiting on done close", c.partitionIndex)
 			return
 		case c.messages <- MessageWithOffset{
 			PartitionIndex: c.partitionIndex,
@@ -262,12 +264,14 @@ func (c *Consumer) read() {
 
 		if err = binary.Read(c.indexHandle, binary.LittleEndian, &workingSegmentData); err != nil {
 			if err != io.EOF {
+				tracef("%d | read index segment data error", c.partitionIndex)
 				c.error(fmt.Errorf("diskq; consumer; cannot read index data: %w", err))
 				return
 			}
 			if c.isActiveSegment() {
 				ok, err = c.waitForNewOffset(&workingSegmentData)
 				if err != nil {
+					tracef("%d | exiting on wait for new offset error", c.partitionIndex)
 					c.error(err)
 					return
 				}
@@ -280,6 +284,7 @@ func (c *Consumer) read() {
 
 			ok, err = c.advanceToNextSegment(&workingSegmentData)
 			if err != nil {
+				tracef("%d | exiting on advance to next segment error", c.partitionIndex)
 				c.error(err)
 				return
 			}
