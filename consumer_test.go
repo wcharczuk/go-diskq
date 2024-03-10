@@ -81,7 +81,7 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 	begin := make(chan struct{})
 	go func() {
 		<-begin
-		for x := 0; x < 64; x++ {
+		for x := 64; x < 128; x++ {
 			dq.Push(Message{
 				PartitionKey: fmt.Sprintf("data-%d", x),
 				Data:         []byte(strings.Repeat("a", 64)),

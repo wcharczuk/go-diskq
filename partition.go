@@ -255,6 +255,17 @@ func getSegmentEndOffset(cfg Config, partitionIndex uint32, startOffset uint64) 
 	}
 	defer f.Close()
 
+	var fstat fs.FileInfo
+	fstat, err = f.Stat()
+	if err != nil {
+		return
+	}
+
+	fsize := fstat.Size()
+	if fsize < int64(segmentIndexSize) {
+		return
+	}
+
 	if _, err = f.Seek(-int64(segmentIndexSize), io.SeekEnd); err != nil {
 		return
 	}
