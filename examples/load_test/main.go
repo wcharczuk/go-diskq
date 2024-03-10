@@ -111,6 +111,9 @@ func main() {
 	signal.Notify(sig, os.Interrupt)
 	select {
 	case <-sig:
+		c0.Close()
+		c1.Close()
+		c2.Close()
 		return
 	case err = <-c0.Errors():
 		fmt.Fprintln(os.Stderr, err.Error())
