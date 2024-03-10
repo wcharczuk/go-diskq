@@ -122,9 +122,6 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	if _, err = s.encodeBuffer.WriteTo(s.data); err != nil {
 		return
 	}
-	if typed, ok := s.data.(*os.File); ok {
-		_ = typed.Sync()
-	}
 
 	// NOTE (wc):
 	// 	we do this in (2) phases to prevent situations where
@@ -136,13 +133,6 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	}
 	if _, err = s.index.Write(s.segmentIndexEncodeBuffer.Bytes()); err != nil {
 		return
-	}
-	// NOTE (wc):
-	//	we do an fsync here to make sure that the index data makes it to disk mostly
-	//	in-tact to trigger updates for consumers.
-	//	this slows down our throughput _tremendously_.
-	if typed, ok := s.index.(*os.File); ok {
-		_ = typed.Sync()
 	}
 
 	s.encodeBuffer.Reset()

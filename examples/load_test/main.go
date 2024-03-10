@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"github.com/wcharczuk/go-diskq"
@@ -27,14 +26,16 @@ func main() {
 		return
 	}
 
-	var messagesPublished, messagesProcessed uint64
+	messagesPublished := [3]uint64{}
+	messagesProcessed := [3]uint64{}
+
 	go func() {
 		for {
-			atomic.AddUint64(&messagesPublished, 1)
-			dq.Push(diskq.Message{
+			partition, _, _ := dq.Push(diskq.Message{
 				PartitionKey: fmt.Sprintf("message-%d", messagesPublished),
 				Data:         []byte("data"),
 			})
+			messagesPublished[partition]++
 		}
 	}()
 
@@ -47,14 +48,12 @@ func main() {
 	}
 	go func() {
 		for {
-			select {
-			case _, ok := <-c0.Messages():
-				if !ok {
-					fmt.Println("c0 channel closed")
-					return
-				}
-				atomic.AddUint64(&messagesProcessed, 1)
+			_, ok := <-c0.Messages()
+			if !ok {
+				fmt.Println("c0 channel closed")
+				return
 			}
+			messagesProcessed[0]++
 		}
 	}()
 
@@ -67,14 +66,12 @@ func main() {
 	}
 	go func() {
 		for {
-			select {
-			case _, ok := <-c1.Messages():
-				if !ok {
-					fmt.Println("c1 channel closed")
-					return
-				}
-				atomic.AddUint64(&messagesProcessed, 1)
+			_, ok := <-c1.Messages()
+			if !ok {
+				fmt.Println("c1 channel closed")
+				return
 			}
+			messagesProcessed[1]++
 		}
 	}()
 
@@ -83,28 +80,30 @@ func main() {
 	})
 	go func() {
 		for {
-			select {
-			case _, ok := <-c2.Messages():
-				if !ok {
-					fmt.Println("c2 channel closed")
-					return
-				}
-				atomic.AddUint64(&messagesProcessed, 1)
+			_, ok := <-c2.Messages()
+			if !ok {
+				fmt.Println("c2 channel closed")
+				return
 			}
+			messagesProcessed[2]++
 		}
 	}()
 
 	var last time.Time = time.Now()
-	var lastMessagesPublished, lastMessagesProcessed uint64 = messagesPublished, messagesProcessed
+	lastMessagesPublished := [3]uint64{}
+	lastMessagesProcessed := [3]uint64{}
+
 	go func() {
 		for range time.Tick(5 * time.Second) {
 			delta := time.Since(last)
-			publishedRate := float64(messagesPublished-lastMessagesPublished) / (float64(delta / time.Second))
-			processedRate := float64(messagesProcessed-lastMessagesProcessed) / (float64(delta / time.Second))
-			fmt.Printf("messages sent=%0.2f/sec proccessed=%0.2f/sec\n", publishedRate, processedRate)
+			for x := 0; x < 3; x++ {
+				publishedRate := float64(messagesPublished[x]-lastMessagesPublished[x]) / (float64(delta / time.Second))
+				processedRate := float64(messagesProcessed[x]-lastMessagesProcessed[x]) / (float64(delta / time.Second))
+				fmt.Printf("partition %d messages sent=%0.2f/sec proccessed=%0.2f/sec\n", x, publishedRate, processedRate)
+				lastMessagesPublished[x] = messagesPublished[x]
+				lastMessagesProcessed[x] = messagesProcessed[x]
+			}
 			last = time.Now()
-			lastMessagesPublished = messagesPublished
-			lastMessagesProcessed = messagesProcessed
 		}
 	}()
 

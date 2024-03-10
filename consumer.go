@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
+	"sync/atomic"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -23,14 +23,16 @@ func openConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		return nil, err
 	}
 	c := &Consumer{
-		cfg:            cfg,
-		partitionIndex: partitionIndex,
-		options:        options,
-		messages:       make(chan MessageWithOffset),
-		errors:         make(chan error, 1),
-		done:           make(chan struct{}),
-		notifyEvents:   make(chan struct{}, 1), // we buffer this so that we always unblock
-		notify:         notify,
+		cfg:              cfg,
+		partitionIndex:   partitionIndex,
+		options:          options,
+		messages:         make(chan MessageWithOffset),
+		errors:           make(chan error, 1),
+		done:             make(chan struct{}),
+		advanceEvents:    make(chan struct{}, 1),
+		indexWriteEvents: make(chan struct{}, 1),
+		dataWriteEvents:  make(chan struct{}, 1),
+		notify:           notify,
 	}
 	go c.read()
 	return c, nil
@@ -59,10 +61,12 @@ type Consumer struct {
 	errors         chan error
 	notify         *fsnotify.Watcher
 
-	partitionActiveSegmentMu sync.Mutex
-	partitionActiveSegment   uint64
+	partitionActiveSegment uint64
+	workingSegment         uint64
 
-	notifyEvents chan struct{}
+	advanceEvents    chan struct{}
+	indexWriteEvents chan struct{}
+	dataWriteEvents  chan struct{}
 
 	done chan struct{}
 
@@ -89,9 +93,13 @@ func (c *Consumer) Close() error {
 		close(c.errors)
 		c.errors = nil
 	}
-	if c.notifyEvents != nil {
-		close(c.notifyEvents)
-		c.notifyEvents = nil
+	if c.indexWriteEvents != nil {
+		close(c.indexWriteEvents)
+		c.indexWriteEvents = nil
+	}
+	if c.dataWriteEvents != nil {
+		close(c.dataWriteEvents)
+		c.dataWriteEvents = nil
 	}
 	if c.indexHandle != nil {
 		_ = c.indexHandle.Close()
@@ -106,21 +114,15 @@ func (c *Consumer) Close() error {
 // internal methods
 //
 
-// read does basically everything.
-//
-// it's incredibly complicated, but generally we figure out which segment to read from
-// seek into that segment, then start reading offsets out and pushing into the messages channel.
-//
-// if we eof on that segment, we figure out what to do next, which is either swap out the
-// working segment for the _next_ segment, or block because we're on the active segment for
-// the partition and we have to wait for new offsets to be written.
 func (c *Consumer) read() {
 	partitionPath := formatPathForPartition(c.cfg, c.partitionIndex)
-	var workingStartOffset uint64
-
+	var workingSegmentData segmentIndex
 	// fsnotify loop
 	go func() {
 		for {
+			if c.indexHandle == nil || c.dataHandle == nil {
+				return
+			}
 			select {
 			case event, ok := <-c.notify.Events:
 				if !ok {
@@ -128,25 +130,39 @@ func (c *Consumer) read() {
 				}
 				if event.Has(fsnotify.Create) {
 					if strings.HasSuffix(event.Name, extData) {
-						c.partitionActiveSegmentMu.Lock()
-						c.partitionActiveSegment, _ = parseSegmentOffsetFromPath(event.Name)
-						c.partitionActiveSegmentMu.Unlock()
-					}
-					continue
-				}
-				if event.Has(fsnotify.Write) {
-					if c.indexHandle != nil {
-						if event.Name == c.indexHandle.Name() && workingStartOffset == c.partitionActiveSegment {
-							select {
-							case <-c.done:
-								return
-							case c.notifyEvents <- struct{}{}:
-							default:
-							}
+						newSegmentStartAt, _ := parseSegmentOffsetFromPath(event.Name)
+						tracef("%d | saw new active segment %d", c.partitionIndex, newSegmentStartAt)
+						atomic.StoreUint64(&c.partitionActiveSegment, newSegmentStartAt)
+						select {
+						case <-c.done:
+							return
+						case c.advanceEvents <- struct{}{}:
+						default:
 						}
 					}
 					continue
 				}
+				if atomic.LoadUint64(&c.partitionActiveSegment) != atomic.LoadUint64(&c.workingSegment) {
+					continue
+				}
+				if event.Has(fsnotify.Write) {
+					if event.Name == c.indexHandle.Name() {
+						select {
+						case <-c.done:
+							return
+						case c.indexWriteEvents <- struct{}{}:
+						default:
+						}
+					} else if event.Name == c.dataHandle.Name() {
+						select {
+						case <-c.done:
+							return
+						case c.dataWriteEvents <- struct{}{}:
+						default:
+						}
+					}
+				}
+				continue
 			case err, ok := <-c.notify.Errors:
 				if !ok {
 					return
@@ -164,9 +180,7 @@ func (c *Consumer) read() {
 	}
 
 	// set the active segment
-	c.partitionActiveSegmentMu.Lock()
-	c.partitionActiveSegment = offsets[len(offsets)-1]
-	c.partitionActiveSegmentMu.Unlock()
+	atomic.StoreUint64(&c.partitionActiveSegment, offsets[len(offsets)-1])
 
 	effectiveConsumeAtOffset, err := c.determineEffectiveConsumeAtOffset(offsets)
 	if err != nil {
@@ -174,27 +188,27 @@ func (c *Consumer) read() {
 		return
 	}
 
-	workingStartOffset, _ = getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
-	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, workingStartOffset, extIndex)
+	workingSegment, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
+	atomic.StoreUint64(&c.workingSegment, workingSegment)
+	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot open index file: %w", err))
 		return
 	}
-	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, workingStartOffset, extData)
+	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot open data file: %w", err))
 		return
 	}
 
-	// this notify handles _everything_ for the partition
 	err = c.notify.Add(partitionPath)
 	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; watch partition path: %w", err))
+		c.error(fmt.Errorf("diskq; consumer; cannot watch partition path: %w", err))
 		return
 	}
 
 	// seek to the correct offset
-	relativeOffset := effectiveConsumeAtOffset - workingStartOffset
+	relativeOffset := effectiveConsumeAtOffset - c.workingSegment
 	indexSeekToBytes := int64(segmentIndexSize) * int64(relativeOffset)
 	if _, err = c.indexHandle.Seek(indexSeekToBytes, io.SeekStart); err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot seek index data: %w", err))
@@ -202,14 +216,13 @@ func (c *Consumer) read() {
 	}
 
 	var ok bool
-	var workingSegmentData segmentIndex
 	if err = binary.Read(c.indexHandle, binary.LittleEndian, &workingSegmentData); err != nil {
 		if err != io.EOF {
 			c.error(fmt.Errorf("diskq; consumer; cannot read index data: %w", err))
 			return
 		}
-		if workingStartOffset == c.partitionActiveSegment {
-			ok, err = c.waitForNewOffsets(&workingSegmentData)
+		if c.isActiveSegment() {
+			ok, err = c.waitForNewOffset(&workingSegmentData)
 			if err != nil {
 				c.error(err)
 				return
@@ -219,6 +232,7 @@ func (c *Consumer) read() {
 			}
 		}
 	}
+
 	if _, err = c.dataHandle.Seek(int64(workingSegmentData.GetOffsetBytes()), io.SeekStart); err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot seek data file: %w", err))
 		return
@@ -250,8 +264,8 @@ func (c *Consumer) read() {
 				c.error(fmt.Errorf("diskq; consumer; cannot read index data: %w", err))
 				return
 			}
-			if workingStartOffset == c.partitionActiveSegment {
-				ok, err = c.waitForNewOffsets(&workingSegmentData)
+			if c.isActiveSegment() {
+				ok, err = c.waitForNewOffset(&workingSegmentData)
 				if err != nil {
 					c.error(err)
 					return
@@ -262,48 +276,123 @@ func (c *Consumer) read() {
 				continue
 			}
 
-			// assumption:
-			// workingOffset != c.partitionActiveSegment
-
-			offsets, err = getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
+			ok, err = c.advanceToNextSegment(&workingSegmentData)
 			if err != nil {
-				c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
+				c.error(err)
 				return
 			}
-
-			// close the existing handles
-			_ = c.indexHandle.Close()
-			_ = c.dataHandle.Close()
-
-			workingStartOffset, _ = getSegmentStartOffsetForOffset(offsets, workingSegmentData.GetOffset()+1)
-			c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, workingStartOffset, extIndex)
-			if err != nil {
-				c.error(fmt.Errorf("diskq; consumer; cannot open index file: %w", err))
-				return
-			}
-			c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, workingStartOffset, extData)
-			if err != nil {
-				c.error(fmt.Errorf("diskq; consumer; cannot open data file: %w", err))
-				return
-			}
-			if err = binary.Read(c.indexHandle, binary.LittleEndian, &workingSegmentData); err != nil {
-				c.error(fmt.Errorf("diskq; consumer; cannot read index data: %w", err))
+			if !ok {
 				return
 			}
 		}
 	}
 }
 
-func (c *Consumer) waitForNewOffsets(workingSegmentData *segmentIndex) (ok bool, err error) {
-	_, ok = <-c.notifyEvents
+func (c *Consumer) isActiveSegment() bool {
+	return atomic.LoadUint64(&c.partitionActiveSegment) == atomic.LoadUint64(&c.workingSegment)
+}
+
+func (c *Consumer) advanceToNextSegment(workingSegmentData *segmentIndex) (ok bool, err error) {
+	tracef("%d | advance to next segment", c.partitionIndex)
+	var offsets []uint64
+	offsets, err = getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
+	if err != nil {
+		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
+		return
+	}
+
+	_ = c.indexHandle.Close()
+	_ = c.dataHandle.Close()
+
+	atomic.StoreUint64(&c.workingSegment, c.getNextSegment(offsets))
+	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
+	if err != nil {
+		err = fmt.Errorf("diskq; consumer; cannot open index file: %w", err)
+		return
+	}
+	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
+	if err != nil {
+		err = fmt.Errorf("diskq; consumer; cannot open data file: %w", err)
+		return
+	}
+
+	if err = binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData); err != nil {
+		if err != io.EOF {
+			c.error(fmt.Errorf("diskq; consumer; cannot read index data: %w", err))
+			return
+		}
+		if c.isActiveSegment() {
+			ok, err = c.waitForNewOffset(workingSegmentData)
+			return
+		}
+	}
+	return
+}
+
+func (c *Consumer) waitForNewOffset(workingSegmentData *segmentIndex) (ok bool, err error) {
+	ok, err = c.waitForIndexWriteEvents(workingSegmentData)
+	if err != nil {
+		return
+	}
 	if !ok {
 		return
 	}
-	err = binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData)
-	if err != nil {
-		err = fmt.Errorf("diskq; consumer; wait for new offsets; cannot read segment: %w", err)
+
+	readErr := binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData)
+	if readErr != nil && readErr != io.EOF {
+		err = fmt.Errorf("diskq; consumer; wait for new offsets; cannot read segment: %w", readErr)
+		return
 	}
+
+	ok, err = c.waitForDataWriteEvents(workingSegmentData)
 	return
+}
+
+func (c *Consumer) waitForIndexWriteEvents(workingSegmentData *segmentIndex) (ok bool, err error) {
+	for {
+		select {
+		case _, ok = <-c.advanceEvents:
+			ok, err = c.advanceToNextSegment(workingSegmentData)
+			return
+		case _, ok = <-c.indexWriteEvents:
+			if !ok {
+				return
+			}
+			indexStat, _ := c.indexHandle.Stat()
+			if indexStat.Size()-int64(workingSegmentData.GetOffsetBytes()) >= int64(segmentIndexSize) {
+				return
+			}
+		}
+	}
+}
+
+func (c *Consumer) waitForDataWriteEvents(workingSegmentData *segmentIndex) (ok bool, err error) {
+	dataStat, _ := c.dataHandle.Stat()
+	dataSizeBytes := dataStat.Size()
+	if dataSizeBytes-int64(workingSegmentData.GetOffsetBytes()) < int64(workingSegmentData.GetSizeBytes()) {
+		for {
+			_, ok = <-c.dataWriteEvents
+			if !ok {
+				return
+			}
+			dataStat, _ = c.dataHandle.Stat()
+			dataSizeBytes = dataStat.Size()
+			if dataSizeBytes-int64(workingSegmentData.GetOffsetBytes()) >= int64(workingSegmentData.GetSizeBytes()) {
+				return
+			}
+		}
+	}
+	ok = true
+	return
+}
+
+func (c *Consumer) getNextSegment(offsets []uint64) (nextWorkingSegment uint64) {
+	for _, offset := range offsets {
+		if offset > c.workingSegment {
+			return offset
+		}
+	}
+	return c.partitionActiveSegment
 }
 
 func (c *Consumer) error(err error) {
@@ -327,5 +416,13 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 		return offsets[len(offsets)-1], nil
 	default:
 		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartAtBehavior)
+	}
+}
+
+var traceEnabled = os.Getenv("DISKQ_TRACE") != ""
+
+func tracef(format string, args ...any) {
+	if traceEnabled {
+		fmt.Println(fmt.Sprintf(format, args...))
 	}
 }
