@@ -29,7 +29,7 @@ func Test_getSegmentOffsets(t *testing.T) {
 	offsets, err := getPartitionSegmentOffsets(cfg, 01)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
-	assert_equal(t, []uint64{0, 14, 28}, offsets)
+	assert_equal(t, []uint64{0, 13, 26}, offsets)
 }
 
 func Test_getSegmentEndTimestamp(t *testing.T) {

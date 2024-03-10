@@ -49,10 +49,11 @@ func Test_Segment_writeUnsafe(t *testing.T) {
 	timeindexBuf := new(bytes.Buffer)
 
 	s := &Segment{
-		data:         dataBuf,
-		index:        indexBuf,
-		timeindex:    timeindexBuf,
-		encodeBuffer: new(bytes.Buffer),
+		data:                     dataBuf,
+		index:                    indexBuf,
+		timeindex:                timeindexBuf,
+		encodeBuffer:             new(bytes.Buffer),
+		segmentIndexEncodeBuffer: new(bytes.Buffer),
 	}
 
 	m0 := Message{

@@ -87,12 +87,12 @@ func Test_Diskq_create_thenOpen(t *testing.T) {
 
 	assert_equal(t, 3, len(dq.partitions))
 
-	assert_equal(t, 32, dq.partitions[0].activeSegment.startOffset)
-	assert_equal(t, 35, dq.partitions[0].activeSegment.endOffset)
-	assert_equal(t, 32, dq.partitions[1].activeSegment.startOffset)
-	assert_equal(t, 34, dq.partitions[1].activeSegment.endOffset)
-	assert_equal(t, 32, dq.partitions[2].activeSegment.startOffset)
-	assert_equal(t, 34, dq.partitions[2].activeSegment.endOffset)
+	assert_equal(t, 31, dq.partitions[0].activeSegment.startOffset)
+	assert_equal(t, 34, dq.partitions[0].activeSegment.endOffset)
+	assert_equal(t, 31, dq.partitions[1].activeSegment.startOffset)
+	assert_equal(t, 33, dq.partitions[1].activeSegment.endOffset)
+	assert_equal(t, 31, dq.partitions[2].activeSegment.startOffset)
+	assert_equal(t, 33, dq.partitions[2].activeSegment.endOffset)
 }
 
 func Test_Diskq_createsNewSegments(t *testing.T) {

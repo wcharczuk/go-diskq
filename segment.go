@@ -36,15 +36,15 @@ func CreateSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segm
 
 func OpenSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segment, error) {
 	intendedPathWithoutExtension := formatPathForSegment(cfg, partitionIndex, startOffset)
-	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_APPEND, 644)
+	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
-	index, err := os.OpenFile(intendedPathWithoutExtension+extIndex, os.O_RDWR|os.O_APPEND, 644)
+	index, err := os.OpenFile(intendedPathWithoutExtension+extIndex, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
-	timeindex, err := os.OpenFile(intendedPathWithoutExtension+extTimeIndex, os.O_RDWR|os.O_APPEND, 644)
+	timeindex, err := os.OpenFile(intendedPathWithoutExtension+extTimeIndex, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}

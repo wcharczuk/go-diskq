@@ -38,7 +38,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 
 	for x := 0; x < 64; x++ {
 		select {
-		case err, _ = <-c.Errors():
+		case err = <-c.Errors():
 		default:
 		}
 		assert_noerror(t, err)
