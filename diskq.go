@@ -8,6 +8,9 @@ import (
 
 // New creates or opens a diskq based on a given config.
 func New(cfg Config) (*Diskq, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	d := &Diskq{
 		cfg: cfg,
 	}

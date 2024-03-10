@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -16,6 +17,13 @@ type Config struct {
 	RetentionMaxBytes int64
 	RetentionMaxAge   time.Duration
 	SegmentSizeBytes  int64
+}
+
+func (c Config) Validate() error {
+	if c.Path == "" {
+		return fmt.Errorf("diskq; config validation; `Path` is required")
+	}
+	return nil
 }
 
 func (c Config) PartitionCountOrDefault() uint32 {
