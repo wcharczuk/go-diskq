@@ -185,7 +185,7 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = p.getSegmentEndTimestamp(startOffset)
+	endTimestamp, err = getSegmentEndTimestamp(p.cfg, p.index, startOffset)
 	if err != nil {
 		return
 	}
@@ -208,27 +208,6 @@ func (p *Partition) vacuumSegment(startOffset uint64) error {
 	return nil
 }
 
-func (p *Partition) getSegmentEndTimestamp(startOffset uint64) (ts time.Time, err error) {
-	var segment segmentTimeIndex
-	var f *os.File
-	f, err = os.Open(formatPathForSegment(p.cfg, p.index, startOffset) + extTimeIndex)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
-		return
-	}
-
-	err = binary.Read(f, binary.LittleEndian, &segment)
-	if err != nil {
-		return
-	}
-
-	ts = segment.GetTimestampUTC()
-	return
-}
-
 func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 	var offsets []uint64
 	offsets, err = getPartitionSegmentOffsets(p.cfg, p.index)
@@ -244,6 +223,46 @@ func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 		}
 		sizeBytes += info.Size()
 	}
+	return
+}
+
+func getSegmentEndTimestamp(cfg Config, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
+	var segment segmentTimeIndex
+	var f *os.File
+	f, err = os.Open(formatPathForSegment(cfg, partitionIndex, startOffset) + extTimeIndex)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	if _, err = f.Seek(0, io.SeekStart); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	ts = segment.GetTimestampUTC()
+	return
+}
+
+func getSegmentEndOffset(cfg Config, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
+	var segment segmentIndex
+	var f *os.File
+	f, err = os.Open(formatPathForSegment(cfg, partitionIndex, startOffset) + extIndex)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	if _, err = f.Seek(-int64(segmentIndexSize), io.SeekEnd); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	endOffset = segment.GetOffset()
 	return
 }
 

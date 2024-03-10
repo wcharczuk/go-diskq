@@ -18,7 +18,11 @@ type ConsumerOptions struct {
 	StartAtOffset   uint64
 }
 
-func openConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
+// OpenConsumer creates a new consumer for a given config, partition and options.
+//
+// There can be many consumers for a given partition, and you can consume partitions that may be
+// written to by external processes.
+func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
 	notify, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -433,7 +437,7 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 	case ConsumerStartAtActiveSegmentStart:
 		return offsets[len(offsets)-1], nil
 	case ConsumerStartAtActiveSegmentLatest:
-		return offsets[len(offsets)-1], nil
+		return getSegmentEndOffset(c.cfg, c.partitionIndex, offsets[len(offsets)-1])
 	default:
 		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartAtBehavior)
 	}

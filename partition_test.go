@@ -92,7 +92,7 @@ func Test_getSegmentEndTimestamp(t *testing.T) {
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := p.getSegmentEndTimestamp(offsets[1])
+	endTimestamp, err := getSegmentEndTimestamp(cfg, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), endTimestamp)
 }
