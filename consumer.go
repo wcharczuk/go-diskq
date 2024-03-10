@@ -29,9 +29,9 @@ func openConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		messages:         make(chan MessageWithOffset),
 		errors:           make(chan error, 1),
 		done:             make(chan struct{}),
-		advanceEvents:    make(chan struct{}, 1),
-		indexWriteEvents: make(chan struct{}, 1),
-		dataWriteEvents:  make(chan struct{}, 1),
+		advanceEvents:    make(chan struct{}, 32),
+		indexWriteEvents: make(chan struct{}, 32),
+		dataWriteEvents:  make(chan struct{}, 32),
 		notify:           notify,
 	}
 	go c.read()
@@ -228,6 +228,7 @@ func (c *Consumer) read() {
 				return
 			}
 			if !ok {
+				tracef("%d | exiting before runloop on channel close", c.partitionIndex)
 				return
 			}
 		}
@@ -271,6 +272,7 @@ func (c *Consumer) read() {
 					return
 				}
 				if !ok {
+					tracef("%d | exiting runloop on channel close", c.partitionIndex)
 					return
 				}
 				continue
@@ -282,6 +284,7 @@ func (c *Consumer) read() {
 				return
 			}
 			if !ok {
+				tracef("%d | exiting runloop on channel close", c.partitionIndex)
 				return
 			}
 		}
@@ -326,6 +329,7 @@ func (c *Consumer) advanceToNextSegment(workingSegmentData *segmentIndex) (ok bo
 			return
 		}
 	}
+	ok = true
 	return
 }
 
