@@ -36,7 +36,7 @@ func main() {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 			}
-			fmt.Printf("-> published message; partition=%d offset=%d\n", partition, offset)
+			fmt.Printf("-> published message; partition=%d offset=%d partition_key=%s\n", partition, offset, fmt.Sprintf("message-%d", messagesPublished))
 		}
 	}()
 
@@ -70,40 +70,34 @@ func main() {
 	go func() {
 		fmt.Println("c0 listening for messages")
 		for {
-			select {
-			case msg, ok := <-c0.Messages():
-				if !ok {
-					fmt.Println("c0 channel closed")
-					return
-				}
-				fmt.Println("<- c0 received", msg.Message.PartitionKey)
+			msg, ok := <-c0.Messages()
+			if !ok {
+				fmt.Println("c0 channel closed")
+				return
 			}
+			fmt.Println("<- c0 received", msg.Message.PartitionKey)
 		}
 	}()
 	go func() {
 		fmt.Println("c1 listening for messages")
 		for {
-			select {
-			case msg, ok := <-c1.Messages():
-				if !ok {
-					fmt.Println("c1 channel closed")
-					return
-				}
-				fmt.Println("<- c1 received", msg.Message.PartitionKey)
+			msg, ok := <-c1.Messages()
+			if !ok {
+				fmt.Println("c1 channel closed")
+				return
 			}
+			fmt.Println("<- c1 received", msg.Message.PartitionKey)
 		}
 	}()
 	go func() {
 		fmt.Println("c2 listening for messages")
 		for {
-			select {
-			case msg, ok := <-c2.Messages():
-				if !ok {
-					fmt.Println("c2 channel closed")
-					return
-				}
-				fmt.Println("<- c2 received", msg.Message.PartitionKey)
+			msg, ok := <-c2.Messages()
+			if !ok {
+				fmt.Println("c2 channel closed")
+				return
 			}
+			fmt.Println("<- c2 received", msg.Message.PartitionKey)
 		}
 	}()
 

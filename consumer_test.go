@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -46,4 +47,14 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 		assert_equal(t, x, msg.Offset)
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
 	}
+}
+
+func Test_misc_buffer_issue(t *testing.T) {
+	data := []byte("foo bar baz")
+	readData := make([]byte, len(data))
+
+	reader := bytes.NewReader(data)
+	n, err := reader.Read(readData)
+	assert_noerror(t, err)
+	assert_equal(t, len(data), n)
 }

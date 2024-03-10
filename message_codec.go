@@ -2,6 +2,7 @@ package diskq
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"time"
 )
@@ -33,18 +34,21 @@ func Decode(m *Message, r io.Reader) (err error) {
 	var partitionKeySizeBytes uint32
 	err = binary.Read(r, binary.LittleEndian, &partitionKeySizeBytes)
 	if err != nil {
+		err = fmt.Errorf("decode; cannot read partition key size: %w", err)
 		return
 	}
 
 	partitionKeyData := make([]byte, partitionKeySizeBytes)
 	_, err = r.Read(partitionKeyData)
 	if err != nil {
+		err = fmt.Errorf("decode; cannot read partition key: %w", err)
 		return
 	}
 	m.PartitionKey = string(partitionKeyData)
 	var timestampNanos int64
 	err = binary.Read(r, binary.LittleEndian, &timestampNanos)
 	if err != nil {
+		err = fmt.Errorf("decode; cannot read timestamp: %w", err)
 		return
 	}
 
@@ -53,9 +57,13 @@ func Decode(m *Message, r io.Reader) (err error) {
 	var dataSizeBytes uint64
 	err = binary.Read(r, binary.LittleEndian, &dataSizeBytes)
 	if err != nil {
+		err = fmt.Errorf("decode; cannot read data size: %w", err)
 		return
 	}
 	m.Data = make([]byte, dataSizeBytes)
 	_, err = r.Read(m.Data)
+	if err != nil {
+		err = fmt.Errorf("decode; cannot read data: %w", err)
+	}
 	return
 }

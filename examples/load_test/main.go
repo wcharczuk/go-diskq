@@ -89,7 +89,7 @@ func main() {
 		}
 	}()
 
-	var last time.Time = time.Now()
+	var last = time.Now()
 	lastMessagesPublished := [3]uint64{}
 	lastMessagesProcessed := [3]uint64{}
 

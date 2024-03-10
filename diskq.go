@@ -84,15 +84,15 @@ func (dq *Diskq) Close() error {
 //
 
 func (dq *Diskq) partitionForMessage(m Message) *Partition {
-	hashIndex := dq.hashIndexForMessage(m)
+	hashIndex := hashIndexForMessage(m, len(dq.partitions))
 	if hashIndex < 0 || hashIndex >= len(dq.partitions) {
 		return nil
 	}
 	return dq.partitions[hashIndex]
 }
 
-func (dq *Diskq) hashIndexForMessage(m Message) int {
+func hashIndexForMessage(m Message, partitions int) int {
 	h := fnv.New32()
 	_, _ = h.Write([]byte(m.PartitionKey))
-	return int(h.Sum32()) % len(dq.partitions)
+	return int(h.Sum32()) % partitions
 }
