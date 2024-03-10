@@ -193,65 +193,6 @@ func (c *Consumer) Close() error {
 // internal methods
 //
 
-func (c *Consumer) listenForFilesystemEvents() {
-	for {
-		if c.notify == nil {
-			return
-		}
-		select {
-		case <-c.done:
-			return
-		case event, ok := <-c.notify.Events:
-			if !ok {
-				return
-			}
-			if c.indexHandle == nil {
-				return
-			}
-			if event.Has(fsnotify.Create) {
-				if strings.HasSuffix(event.Name, extData) {
-					newSegmentStartAt, _ := parseSegmentOffsetFromPath(event.Name)
-					atomic.StoreUint64(&c.partitionActiveSegment, newSegmentStartAt)
-					select {
-					case <-c.done:
-						return
-					case c.advanceEvents <- struct{}{}:
-					default:
-					}
-				}
-				continue
-			}
-			if atomic.LoadUint64(&c.partitionActiveSegment) != atomic.LoadUint64(&c.workingSegment) {
-				continue
-			}
-			if event.Has(fsnotify.Write) {
-				if event.Name == c.indexHandle.Name() {
-					select {
-					case <-c.done:
-						return
-					case c.indexWriteEvents <- struct{}{}:
-					default:
-					}
-				} else if event.Name == c.dataHandle.Name() {
-					select {
-					case <-c.done:
-						return
-					case c.dataWriteEvents <- struct{}{}:
-					default:
-					}
-				}
-			}
-			continue
-		case err, ok := <-c.notify.Errors:
-			if !ok {
-				return
-			}
-			c.error(fmt.Errorf("diskq; consumer; notify returned error: %w", err))
-			return
-		}
-	}
-}
-
 func (c *Consumer) read() {
 	defer c.Close()
 
@@ -362,6 +303,70 @@ func (c *Consumer) read() {
 	}
 }
 
+func (c *Consumer) listenForFilesystemEvents() {
+	for {
+		if c.notify == nil {
+			return
+		}
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+		select {
+		case <-c.done:
+			return
+		case event, ok := <-c.notify.Events:
+			if !ok {
+				return
+			}
+			if c.indexHandle == nil {
+				return
+			}
+			if event.Has(fsnotify.Create) {
+				if strings.HasSuffix(event.Name, extData) {
+					newSegmentStartAt, _ := parseSegmentOffsetFromPath(event.Name)
+					atomic.StoreUint64(&c.partitionActiveSegment, newSegmentStartAt)
+					select {
+					case <-c.done:
+						return
+					case c.advanceEvents <- struct{}{}:
+					default:
+					}
+				}
+				continue
+			}
+			if atomic.LoadUint64(&c.partitionActiveSegment) != atomic.LoadUint64(&c.workingSegment) {
+				continue
+			}
+			if event.Has(fsnotify.Write) {
+				if event.Name == c.indexHandle.Name() {
+					select {
+					case <-c.done:
+						return
+					case c.indexWriteEvents <- struct{}{}:
+					default:
+					}
+				} else if event.Name == c.dataHandle.Name() {
+					select {
+					case <-c.done:
+						return
+					case c.dataWriteEvents <- struct{}{}:
+					default:
+					}
+				}
+			}
+			continue
+		case err, ok := <-c.notify.Errors:
+			if !ok {
+				return
+			}
+			c.error(fmt.Errorf("diskq; consumer; notify returned error: %w", err))
+			return
+		}
+	}
+}
+
 func (c *Consumer) readNextSegmentIndex(workingSegmentData *segmentIndex) (ok bool, err error) {
 	var indexStat fs.FileInfo
 	indexStat, err = c.indexHandle.Stat()
@@ -373,7 +378,7 @@ func (c *Consumer) readNextSegmentIndex(workingSegmentData *segmentIndex) (ok bo
 		return
 	}
 	if (indexStat.Size() - indexPosition) < int64(segmentIndexSize) {
-		if c.isActiveSegment() {
+		if c.isReadingActiveSegment() {
 			ok, err = c.waitForNewOffset(workingSegmentData)
 			return
 		}
@@ -390,20 +395,34 @@ func (c *Consumer) readNextSegmentIndex(workingSegmentData *segmentIndex) (ok bo
 	return
 }
 
-func (c *Consumer) isActiveSegment() bool {
+func (c *Consumer) isReadingActiveSegment() bool {
 	return atomic.LoadUint64(&c.partitionActiveSegment) == atomic.LoadUint64(&c.workingSegment)
 }
 
 func (c *Consumer) advanceToNextSegment(workingSegmentData *segmentIndex) (ok bool, err error) {
+	err = c.advanceFilesToNextSegment()
+	if err != nil {
+		return
+	}
+	ok, err = c.readNextSegmentIndex(workingSegmentData)
+	return
+}
+
+func (c *Consumer) advanceFilesToNextSegment() (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	var offsets []uint64
 	offsets, err = getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
 		return
 	}
-
 	_ = c.indexHandle.Close()
 	_ = c.dataHandle.Close()
+
+	c.indexWriteEvents = make(chan struct{}, 1)
+	c.dataWriteEvents = make(chan struct{}, 1)
 
 	atomic.StoreUint64(&c.workingSegment, c.getNextSegment(offsets))
 	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
@@ -416,7 +435,6 @@ func (c *Consumer) advanceToNextSegment(workingSegmentData *segmentIndex) (ok bo
 		err = fmt.Errorf("diskq; consumer; cannot open data file: %w", err)
 		return
 	}
-	ok, err = c.readNextSegmentIndex(workingSegmentData)
 	return
 }
 
