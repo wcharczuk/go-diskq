@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,10 +32,14 @@ func assert_notnil(t *testing.T, a any) {
 	}
 }
 
-func assert_equal(t *testing.T, expected, actual any) {
+func assert_equal(t *testing.T, expected, actual any, extra ...any) {
 	t.Helper()
 	if !areEqual(expected, actual) {
-		t.Errorf("equal expectation failed; expected value: %v, actual value: %v", expected, actual)
+		if len(extra) > 0 {
+			t.Errorf("equal expectation failed; expected value: %v, actual value: %v (%s)", expected, actual, fmt.Sprint(extra...))
+		} else {
+			t.Errorf("equal expectation failed; expected value: %v, actual value: %v", expected, actual)
+		}
 		t.FailNow()
 	}
 }

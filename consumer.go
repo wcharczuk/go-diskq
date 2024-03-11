@@ -220,8 +220,6 @@ func (c *Consumer) read() {
 	workingSegmentOffset, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
 	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
 
-	fmt.Println("consumer starting at", c.workingSegment, effectiveConsumeAtOffset)
-
 	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot open index file: %w", err))

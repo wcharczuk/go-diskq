@@ -76,6 +76,10 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 	assert_noerror(t, err)
 	assert_equal(t, 6, len(entries))
 
+	endOffset, err := getSegmentEndOffset(cfg, 0, entries[len(entries)-1])
+	assert_noerror(t, err)
+	assert_equal(t, 63, endOffset)
+
 	c, err := dq.Consume(0, ConsumerOptions{
 		StartAtBehavior: ConsumerStartAtActiveSegmentLatest,
 	})
@@ -93,15 +97,22 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 		}
 	}()
 
+	entries, err = getPartitionSegmentOffsets(cfg, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 6, len(entries))
+
+	endOffset, err = getSegmentEndOffset(cfg, 0, entries[len(entries)-1])
+	assert_noerror(t, err)
+	assert_equal(t, 63, endOffset)
+
 	close(begin)
 	for x := 0; x < 64; x++ {
 		select {
 		case err = <-c.Errors():
 			assert_noerror(t, err)
 		case msg := <-c.Messages():
-			assert_equal(t, x+64, msg.Offset)
-			assert_equal(t, fmt.Sprintf("data-%d", x+64), msg.Message.PartitionKey)
-			fmt.Println("message!")
+			assert_equal(t, x+63, msg.Offset, fmt.Sprint(x), msg.Message.PartitionKey)
+			assert_equal(t, fmt.Sprintf("data-%d", x+63), msg.Message.PartitionKey, fmt.Sprint(x))
 		}
 	}
 }
