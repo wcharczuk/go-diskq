@@ -23,6 +23,9 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 	if err != nil {
 		return nil, err
 	}
+	if _, err := os.Stat(formatPathForPartition(cfg, partitionIndex)); err != nil {
+		return nil, fmt.Errorf("diskq; consumer; cannot stat data path: %w", err)
+	}
 	var notify *fsnotify.Watcher
 	if options.EndBehavior != ConsumerEndAndClose {
 		notify, err = fsnotify.NewWatcher()
@@ -30,6 +33,7 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 			return nil, err
 		}
 	}
+
 	c := &Consumer{
 		cfg:            cfg,
 		partitionIndex: partitionIndex,

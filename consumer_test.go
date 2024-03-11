@@ -90,7 +90,9 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 	defer c.Close()
 
 	begin := make(chan struct{})
+	scheduled := make(chan struct{})
 	go func() {
+		close(scheduled)
 		<-begin
 		for x := 64; x < 128; x++ {
 			dq.Push(Message{
@@ -110,6 +112,7 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 
 	assert_equal(t, 60, c.workingSegment)
 
+	<-scheduled
 	close(begin)
 	for x := 0; x < 64; x++ {
 		select {
