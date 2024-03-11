@@ -13,6 +13,10 @@ import (
 
 var flagPath = flag.String("path", "", "The data path (if unset, a temporary dir will be created")
 var flagPartition = flag.Int("partition", 0, "The partition to consume")
+var flagStartBehavior = flag.String("start-behavior", "beginning", "The start behavior (one of 'beginning', 'at-offset', 'active-start', 'active-latest')")
+var flagStartAtOffset = flag.Int("start-at-offset", 0, "The offset to start reading from (if the start behavior is 'at offset')")
+var flagEndBehavior = flag.String("end-behavior", "wait", "The end behavior (one of 'wait', 'at-offset', 'close')")
+var flagEndAtOffset = flag.Int("end-at-offset", 0, "The offset to end reading from (if the end behavior is 'at-offset')")
 var flagProcessingDelay = flag.Duration("processing-delay", 0, "The delay to inject into processing")
 
 func main() {
@@ -25,7 +29,6 @@ func main() {
 		var done func()
 		path, done = tempDir()
 		defer done()
-
 	}
 
 	fmt.Printf("using data path: %s\n", path)
@@ -34,8 +37,33 @@ func main() {
 		Path: path,
 	}
 
+	var startBehavior = diskq.ConsumerStartAtBeginning
+	switch *flagStartBehavior {
+	case "beginning":
+		startBehavior = diskq.ConsumerStartAtBeginning
+	case "at-offset":
+		startBehavior = diskq.ConsumerStartAtOffset
+	case "active-start":
+		startBehavior = diskq.ConsumerStartAtActiveSegmentStart
+	case "active-latest":
+		startBehavior = diskq.ConsumerStartAtActiveSegmentLatest
+	}
+
+	var endBehavior = diskq.ConsumerEndAndWait
+	switch *flagEndBehavior {
+	case "wait":
+		endBehavior = diskq.ConsumerEndAndWait
+	case "at-offset":
+		endBehavior = diskq.ConsumerEndAtOffset
+	case "close":
+		endBehavior = diskq.ConsumerEndAndClose
+	}
+
 	consumer, err := diskq.OpenConsumer(cfg, uint32(*flagPartition), diskq.ConsumerOptions{
-		StartAtBehavior: diskq.ConsumerStartAtBeginning,
+		StartAtBehavior: startBehavior,
+		StartAtOffset:   uint64(*flagStartAtOffset),
+		EndBehavior:     endBehavior,
+		EndAtOffset:     uint64(*flagEndAtOffset),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())

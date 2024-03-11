@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,7 @@ func main() {
 	var path string
 	if *flagPath != "" {
 		path = *flagPath
+		_ = os.MkdirAll(path, 0755)
 	} else {
 		var done func()
 		path, done = tempDir()
@@ -32,8 +34,10 @@ func main() {
 	fmt.Printf("using data path: %s\n", path)
 
 	cfg := diskq.Config{
-		Path:           path,
-		PartitionCount: uint32(*flagPartitions),
+		Path:             path,
+		PartitionCount:   uint32(*flagPartitions),
+		SegmentSizeBytes: 1 << 20, // 1mb
+		RetentionMaxAge:  5 * time.Minute,
 	}
 
 	dq, err := diskq.New(cfg)
@@ -41,7 +45,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
-	defer dq.Close()
+	defer func() { _ = dq.Close() }()
 
 	var messagesPublished uint64
 	var errors = make(chan error, 1)
@@ -50,13 +54,25 @@ func main() {
 			atomic.AddUint64(&messagesPublished, 1)
 			partition, offset, err := dq.Push(diskq.Message{
 				PartitionKey: fmt.Sprintf("message-%d", messagesPublished),
-				Data:         []byte("data"),
+				Data:         []byte(strings.Repeat("a", 1024)),
 			})
 			if err != nil {
 				errors <- err
 				return
 			}
 			fmt.Printf("-> published message; partition=%d offset=%d partition_key=%s\n", partition, offset, fmt.Sprintf("message-%d", messagesPublished))
+		}
+	}()
+
+	go func() {
+		for range time.Tick(time.Minute) {
+			fmt.Println("vacuuming data files ...")
+			err := dq.Vacuum()
+			if err != nil {
+				errors <- err
+				return
+			}
+			fmt.Println("vacuuming data files complete!")
 		}
 	}()
 

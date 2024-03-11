@@ -104,6 +104,10 @@ func (p *Partition) Vacuum() error {
 	if p.cfg.RetentionMaxAge == 0 && p.cfg.RetentionMaxBytes == 0 {
 		return nil
 	}
+	if p.activeSegment == nil || p.activeSegment.data == nil {
+		return nil
+	}
+
 	segmentOffsets, err := getPartitionSegmentOffsets(p.cfg, p.index)
 	if err != nil {
 		return err
@@ -309,5 +313,5 @@ func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) (output []uin
 		}
 		output = append(output, segmentStartOffset)
 	}
-	return output, nil
+	return
 }
