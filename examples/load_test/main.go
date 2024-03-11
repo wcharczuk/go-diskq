@@ -25,6 +25,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
+	defer func() { _ = dq.Close() }()
 
 	messagesPublished := [3]uint64{}
 	messagesProcessed := [3]uint64{}
@@ -111,9 +112,9 @@ func main() {
 	signal.Notify(sig, os.Interrupt)
 	select {
 	case <-sig:
-		c0.Close()
-		c1.Close()
-		c2.Close()
+		_ = c0.Close()
+		_ = c1.Close()
+		_ = c2.Close()
 		return
 	case err = <-c0.Errors():
 		fmt.Fprintln(os.Stderr, err.Error())

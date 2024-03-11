@@ -18,7 +18,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 
 	dq, err := New(cfg)
 	assert_noerror(t, err)
-	defer dq.Close()
+	defer func() { _ = dq.Close() }()
 
 	var offset uint64
 	for x := 0; x < 64; x++ {
@@ -34,7 +34,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 		StartAtBehavior: ConsumerStartAtBeginning,
 	})
 	assert_noerror(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	for x := 0; x < 64; x++ {
 		select {
@@ -60,7 +60,7 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 
 	dq, err := New(cfg)
 	assert_noerror(t, err)
-	defer dq.Close()
+	defer func() { _ = dq.Close() }()
 
 	var offset uint64
 	for x := 0; x < 64; x++ {
@@ -87,7 +87,7 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 		StartAtBehavior: ConsumerStartAtActiveSegmentLatest,
 	})
 	assert_noerror(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	begin := make(chan struct{})
 	scheduled := make(chan struct{})
@@ -95,7 +95,7 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 		close(scheduled)
 		<-begin
 		for x := 64; x < 128; x++ {
-			dq.Push(Message{
+			_, _, _ = dq.Push(Message{
 				PartitionKey: fmt.Sprintf("data-%d", x),
 				Data:         []byte(strings.Repeat("a", 64)),
 			})

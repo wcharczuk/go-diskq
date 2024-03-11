@@ -201,7 +201,11 @@ func (c *Consumer) Close() error {
 //
 
 func (c *Consumer) read() {
-	defer c.Close()
+	defer func() {
+		if err := c.Close(); err != nil {
+			c.error(err)
+		}
+	}()
 
 	close(c.didStart)
 	c.didStart = nil
@@ -481,6 +485,9 @@ sized:
 	for {
 		select {
 		case _, ok = <-c.advanceEvents:
+			if !ok {
+				return
+			}
 			ok, err = c.advanceToNextSegment(workingSegmentData)
 			return
 

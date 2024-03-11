@@ -233,7 +233,7 @@ func getSegmentEndTimestamp(cfg Config, partitionIndex uint32, startOffset uint6
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
 		return
@@ -253,7 +253,7 @@ func getSegmentEndOffset(cfg Config, partitionIndex uint32, startOffset uint64) 
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var fstat fs.FileInfo
 	fstat, err = f.Stat()
@@ -288,7 +288,7 @@ func getSegmentStartOffsetForOffset(entries []uint64, offset uint64) (uint64, bo
 	return 0, false
 }
 
-func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, error) {
+func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) (output []uint64, err error) {
 	entries, err := os.ReadDir(formatPathForPartition(cfg, partitionIndex))
 	if err != nil {
 		return nil, err
@@ -296,7 +296,6 @@ func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) ([]uint64, er
 	if len(entries) == 0 {
 		return nil, nil
 	}
-	var output []uint64
 	for _, e := range entries {
 		if e.IsDir() {
 			continue

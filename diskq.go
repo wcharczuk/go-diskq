@@ -10,6 +10,9 @@ import (
 )
 
 // New creates or opens a diskq based on a given config.
+//
+// The `Diskq` type itself should be thought of as a producer with
+// exclusive access to write to the data directory named in the config.
 func New(cfg Config) (*Diskq, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -31,12 +34,15 @@ func New(cfg Config) (*Diskq, error) {
 	return d, nil
 }
 
+// Diskq is the root struct of the queue.
 type Diskq struct {
 	id         UUID
 	cfg        Config
 	partitions []*Partition
 }
 
+// Push pushes a new message into the diskq, returning the partition it was written to,
+// the offset it was written to, and any errors that were generated while writing the message.
 func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error) {
 	if value.PartitionKey == "" {
 		value.PartitionKey = UUIDv4().String()
@@ -57,6 +63,7 @@ func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error
 	return
 }
 
+// GetOffset finds and decodes a message by offset in a given partition and returns it.
 func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok bool, err error) {
 	if partitionIndex >= uint32(len(dq.partitions)) {
 		return
@@ -106,13 +113,26 @@ func (dq *Diskq) Sync() error {
 	return nil
 }
 
+// Close releases any resources associated with the diskq and
+// removes the sentinel file.
+func (dq *Diskq) Close() error {
+	for _, p := range dq.partitions {
+		_ = p.Close()
+	}
+	return dq.releaseSentinel()
+}
+
+//
+// internal methods
+//
+
 func (dq *Diskq) writeSentinel() error {
 	sentinelPath := filepath.Join(dq.cfg.Path, "owner")
 	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return err
 	}
-	defer sf.Close()
+	defer func() { _ = sf.Close() }()
 
 	_, err = sf.Write(dq.id[:])
 	return err
@@ -127,15 +147,6 @@ func maybeSync(wr io.Writer) error {
 		return typed.Sync()
 	}
 	return nil
-}
-
-// Close releases any resources associated with the diskq and
-// removes the sentinel file.
-func (dq *Diskq) Close() error {
-	for _, p := range dq.partitions {
-		_ = p.Close()
-	}
-	return dq.releaseSentinel()
 }
 
 //

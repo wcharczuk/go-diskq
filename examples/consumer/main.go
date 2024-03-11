@@ -41,7 +41,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
-	defer consumer.Close()
+	defer func() { _ = consumer.Close() }()
 
 	go func() {
 		fmt.Printf("consumer %d listening for messages\n", *flagPartition)

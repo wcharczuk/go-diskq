@@ -117,18 +117,18 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	dq, err := New(cfg)
 	assert_noerror(t, err)
 
-	dq.Push(m)
-	dq.Push(m)
-	dq.Push(m)
-	dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
 
 	// expect a new active segment
 	assert_equal(t, 4, dq.partitions[expectPartitionKey].activeSegment.startOffset)
 
-	dq.Push(m)
-	dq.Push(m)
-	dq.Push(m)
-	dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
 
 	// now we need to tear apart the individual partition files
 
@@ -186,6 +186,6 @@ func readIndexEntries(r io.Reader) (output []segmentIndex) {
 
 func messageSizeBytes(m Message) int64 {
 	data := new(bytes.Buffer)
-	Encode(m, data)
+	_ = Encode(m, data)
 	return int64(data.Len())
 }

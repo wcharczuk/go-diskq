@@ -1,0 +1,46 @@
+name: "Continuous Integration"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "*.go" ]
+  pull_request:
+    branches: [ main ]
+    paths: [ "*.go" ]
+
+jobs:
+  tests:
+    name: "Tests"
+    runs-on: ubuntu-latest
+
+    env:
+      GOOS: "linux"
+      GOARCH: "amd64"
+      GO111MODULE: "on"
+      CGO_ENABLED: "0"
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: false
+
+    - name: Run all tests
+      run: go test -count 10 ./...
+
+  lint:
+    name: "Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+
+      - name: Lint repository
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.54

@@ -73,7 +73,7 @@ func Test_Diskq_create_thenOpen(t *testing.T) {
 	func() {
 		dq, err := New(cfg)
 		assert_noerror(t, err)
-		defer dq.Close()
+		defer func() { _ = dq.Close() }()
 
 		partitionOffsets := make(map[uint32]map[uint64]struct{})
 		for partitionIndex := 0; partitionIndex < int(cfg.PartitionCount); partitionIndex++ {
@@ -100,7 +100,7 @@ func Test_Diskq_create_thenOpen(t *testing.T) {
 
 	dq, err := New(cfg)
 	assert_noerror(t, err)
-	defer dq.Close()
+	defer func() { _ = dq.Close() }()
 
 	assert_equal(t, 3, len(dq.partitions))
 

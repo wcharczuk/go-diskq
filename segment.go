@@ -161,7 +161,7 @@ func getSegmentOffset(cfg Config, partitionIndex uint32, startOffset, offset uin
 		err = fmt.Errorf("diskq; get segment offset; cannot open index file: %w", err)
 		return
 	}
-	defer indexHandle.Close()
+	defer func() { _ = indexHandle.Close() }()
 
 	var dataHandle *os.File
 	dataHandle, err = openSegmentFileForRead(cfg, partitionIndex, startOffset, extData)
@@ -169,7 +169,7 @@ func getSegmentOffset(cfg Config, partitionIndex uint32, startOffset, offset uin
 		err = fmt.Errorf("diskq; get segment offset; cannot open data file: %w", err)
 		return
 	}
-	defer dataHandle.Close()
+	defer func() { _ = dataHandle.Close() }()
 
 	relativeOffset := offset - startOffset
 	indexSeekToBytes := int64(segmentIndexSize) * int64(relativeOffset)
