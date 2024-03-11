@@ -32,6 +32,14 @@ func assert_error(t *testing.T, err error) {
 	}
 }
 
+func assert_nil(t *testing.T, a any) {
+	t.Helper()
+	if !isNil(a) {
+		t.Errorf("expected value to be nil")
+		t.FailNow()
+	}
+}
+
 func assert_notnil(t *testing.T, a any) {
 	t.Helper()
 	if isNil(a) {

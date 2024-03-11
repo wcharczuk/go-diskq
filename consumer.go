@@ -581,7 +581,7 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 		if c.options.StartAtOffset < offsets[0] {
 			return 0, fmt.Errorf("diskq; consume; invalid start at offset: %d", c.options.StartAtOffset)
 		}
-		return c.options.StartAtOffset, nil
+		return c.options.StartAtOffset + 1, nil
 	case ConsumerStartAtBeginning:
 		return offsets[0], nil
 	case ConsumerStartAtActiveSegmentStart:

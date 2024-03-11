@@ -59,12 +59,28 @@ func main() {
 		endBehavior = diskq.ConsumerEndAndClose
 	}
 
-	consumer, err := diskq.OpenConsumer(cfg, uint32(*flagPartition), diskq.ConsumerOptions{
+	marker, markerFound, err := diskq.NewOffsetMarker(filepath.Join(path, fmt.Sprintf("consumer-%03d", *flagPartition)), diskq.OffsetMarkerOptions{
+		AutosyncInterval: time.Second,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return
+	}
+	defer func() { _ = marker.Close() }()
+
+	consumerOptions := diskq.ConsumerOptions{
 		StartAtBehavior: startBehavior,
 		StartAtOffset:   uint64(*flagStartAtOffset),
 		EndBehavior:     endBehavior,
 		EndAtOffset:     uint64(*flagEndAtOffset),
-	})
+	}
+	if markerFound {
+		fmt.Println("using existing marker offset:", marker.Latest())
+		consumerOptions.StartAtBehavior = diskq.ConsumerStartAtOffset
+		consumerOptions.StartAtOffset = marker.Latest()
+	}
+
+	consumer, err := diskq.OpenConsumer(cfg, uint32(*flagPartition), consumerOptions)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
@@ -80,11 +96,12 @@ func main() {
 				return
 			}
 
-			fmt.Printf("<- consumer %d received %v, age %v\n", *flagPartition, msg.Message.PartitionKey, time.Now().UTC().Sub(msg.TimestampUTC))
+			fmt.Printf("<- consumer %d received %v, age %v\n", *flagPartition, msg.Offset, time.Now().UTC().Sub(msg.TimestampUTC))
 			if *flagProcessingDelay > 0 {
 				time.Sleep(*flagProcessingDelay)
 			}
-			fmt.Printf("<- consumer %d finished processing %v\n", *flagPartition, msg.Message.PartitionKey)
+			marker.Record(msg.Offset)
+			fmt.Printf("<- consumer %d finished processing %v\n", *flagPartition, msg.Offset)
 		}
 	}()
 
