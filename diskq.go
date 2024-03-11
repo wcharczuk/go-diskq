@@ -3,6 +3,8 @@ package diskq
 import (
 	"fmt"
 	"hash/fnv"
+	"io"
+	"os"
 	"time"
 )
 
@@ -76,6 +78,33 @@ func (dq *Diskq) Vacuum() (err error) {
 		}
 	}
 	return
+}
+
+// Sync calls `fsync` on each of the partition file handles.
+//
+// This has the effect of realizing any buffered data to disk.
+//
+// You shouldn't ever need to call this, but it's here if you do need to.
+func (dq *Diskq) Sync() error {
+	for _, p := range dq.partitions {
+		if err := maybeSync(p.activeSegment.index); err != nil {
+			return err
+		}
+		if err := maybeSync(p.activeSegment.timeindex); err != nil {
+			return err
+		}
+		if err := maybeSync(p.activeSegment.data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func maybeSync(wr io.Writer) error {
+	if typed, ok := wr.(*os.File); ok {
+		return typed.Sync()
+	}
+	return nil
 }
 
 func (dq *Diskq) Close() error {

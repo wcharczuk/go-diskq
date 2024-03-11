@@ -37,6 +37,7 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		messages:       make(chan MessageWithOffset),
 		errors:         make(chan error, 1),
 		done:           make(chan struct{}),
+		didStart:       make(chan struct{}),
 
 		notify: notify,
 
@@ -48,6 +49,7 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 		dataWriteEvents:  make(chan struct{}, 1),
 	}
 	go c.read()
+	<-c.didStart
 	return c, nil
 }
 
@@ -115,7 +117,8 @@ type Consumer struct {
 	indexWriteEvents chan struct{}
 	dataWriteEvents  chan struct{}
 
-	done chan struct{}
+	didStart chan struct{}
+	done     chan struct{}
 
 	indexHandle *os.File
 	dataHandle  *os.File
@@ -196,61 +199,11 @@ func (c *Consumer) Close() error {
 func (c *Consumer) read() {
 	defer c.Close()
 
-	partitionPath := formatPathForPartition(c.cfg, c.partitionIndex)
+	close(c.didStart)
+	c.didStart = nil
 
 	var workingSegmentData segmentIndex
-	if c.options.EndBehavior != ConsumerEndAndClose {
-		go c.listenForFilesystemEvents()
-	}
-
-	offsets, err := getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
-	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
-		return
-	}
-
-	// set the active segment
-	atomic.StoreUint64(&c.partitionActiveSegment, offsets[len(offsets)-1])
-	effectiveConsumeAtOffset, err := c.determineEffectiveConsumeAtOffset(offsets)
-	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; cannot determine effective consume at offset: %w", err))
-		return
-	}
-
-	workingSegmentOffset, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
-	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
-
-	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
-	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; cannot open index file: %w", err))
-		return
-	}
-	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
-	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; cannot open data file: %w", err))
-		return
-	}
-
-	if c.options.EndBehavior != ConsumerEndAndClose {
-		err = c.notify.Add(partitionPath)
-		if err != nil {
-			c.error(fmt.Errorf("diskq; consumer; cannot watch partition path: %w", err))
-			return
-		}
-	}
-
-	// seek to the correct offset
-	relativeOffset := effectiveConsumeAtOffset - c.workingSegment
-	indexSeekToBytes := int64(segmentIndexSize) * int64(relativeOffset)
-	if indexSeekToBytes > 0 {
-		if _, err = c.indexHandle.Seek(indexSeekToBytes, io.SeekStart); err != nil {
-			c.error(fmt.Errorf("diskq; consumer; cannot seek index data: %w", err))
-			return
-		}
-	}
-
-	var ok bool
-	ok, err = c.readNextSegmentIndex(&workingSegmentData)
+	ok, err := c.initializeRead(&workingSegmentData)
 	if err != nil {
 		c.error(err)
 		return
@@ -259,16 +212,15 @@ func (c *Consumer) read() {
 		return
 	}
 
-	if workingSegmentData.GetOffsetBytes() > 0 {
-		if _, err = c.dataHandle.Seek(int64(workingSegmentData.GetOffsetBytes()), io.SeekStart); err != nil {
-			c.error(fmt.Errorf("diskq; consumer; cannot seek data file: %w", err))
-			return
-		}
-	}
-
 	var m Message
 	var messageData []byte
 	for {
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+
 		messageData = make([]byte, workingSegmentData.GetSizeBytes())
 		if _, err = c.dataHandle.Read(messageData); err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot read data file: %w", err))
@@ -302,6 +254,71 @@ func (c *Consumer) read() {
 			return
 		}
 	}
+}
+
+func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	partitionPath := formatPathForPartition(c.cfg, c.partitionIndex)
+	if c.options.EndBehavior != ConsumerEndAndClose {
+		go c.listenForFilesystemEvents()
+	}
+
+	offsets, err := getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
+	if err != nil {
+		return
+	}
+
+	// set the active segment
+	atomic.StoreUint64(&c.partitionActiveSegment, offsets[len(offsets)-1])
+	effectiveConsumeAtOffset, err := c.determineEffectiveConsumeAtOffset(offsets)
+	if err != nil {
+		return
+	}
+
+	workingSegmentOffset, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
+	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
+
+	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
+	if err != nil {
+		return
+	}
+	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
+	if err != nil {
+		return
+	}
+
+	if c.options.EndBehavior != ConsumerEndAndClose {
+		err = c.notify.Add(partitionPath)
+		if err != nil {
+			return
+		}
+	}
+
+	// seek to the correct offset
+	relativeOffset := effectiveConsumeAtOffset - c.workingSegment
+	indexSeekToBytes := int64(segmentIndexSize) * int64(relativeOffset)
+	if indexSeekToBytes > 0 {
+		if _, err = c.indexHandle.Seek(indexSeekToBytes, io.SeekStart); err != nil {
+			return
+		}
+	}
+
+	ok, err = c.readNextSegmentIndex(workingSegmentData)
+	if err != nil {
+		return
+	}
+	if !ok {
+		return
+	}
+	if workingSegmentData.GetOffsetBytes() > 0 {
+		if _, err = c.dataHandle.Seek(int64(workingSegmentData.GetOffsetBytes()), io.SeekStart); err != nil {
+			return
+		}
+	}
+	ok = true
+	return
 }
 
 func (c *Consumer) listenForFilesystemEvents() {

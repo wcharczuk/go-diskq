@@ -72,6 +72,9 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 		assert_equal(t, x, offset)
 	}
 
+	err = dq.Sync()
+	assert_noerror(t, err)
+
 	entries, err := getPartitionSegmentOffsets(cfg, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 6, len(entries))
@@ -104,6 +107,8 @@ func Test_Consumer_startFromActivePartitionLatest(t *testing.T) {
 	endOffset, err = getSegmentEndOffset(cfg, 0, entries[len(entries)-1])
 	assert_noerror(t, err)
 	assert_equal(t, 63, endOffset)
+
+	assert_equal(t, 60, c.workingSegment)
 
 	close(begin)
 	for x := 0; x < 64; x++ {
