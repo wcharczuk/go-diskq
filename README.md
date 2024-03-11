@@ -1,9 +1,13 @@
 `diskq`
 =======
 
-The goal of `go-diskq` is to provide something like sqlite, but for Kafka.
+## Caveats
 
 `go-diskq` is currently in pre-release testing, and should not be used in production.
+
+# About
+
+The goal of `go-diskq` is to provide something like sqlite, but for Kafka.
 
 Specifically the requirements were:
 - Create durable event producers that recorded events to disk for each event to prevent dataloss on process shutdown.
