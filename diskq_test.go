@@ -43,6 +43,23 @@ func Test_Diskq_create(t *testing.T) {
 	assert_equal(t, 3, len(dirEntries))
 }
 
+func Test_Diskq_sentinel(t *testing.T) {
+	tempPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             tempPath,
+		PartitionCount:   3,
+		SegmentSizeBytes: 1024, // 1kb
+	}
+
+	_, err := New(cfg)
+	assert_noerror(t, err)
+
+	_, err = New(cfg)
+	assert_error(t, err)
+}
+
 func Test_Diskq_create_thenOpen(t *testing.T) {
 	tempPath, done := tempDir()
 	defer done()
@@ -78,7 +95,7 @@ func Test_Diskq_create_thenOpen(t *testing.T) {
 
 		dirEntries, err := os.ReadDir(tempPath)
 		assert_noerror(t, err)
-		assert_equal(t, 3, len(dirEntries))
+		assert_equal(t, 4, len(dirEntries), "includes the sentinel")
 	}()
 
 	dq, err := New(cfg)

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -14,7 +15,11 @@ func New(cfg Config) (*Diskq, error) {
 		return nil, err
 	}
 	d := &Diskq{
+		id:  UUIDv4(),
 		cfg: cfg,
+	}
+	if err := d.writeSentinel(); err != nil {
+		return nil, err
 	}
 	for partitionIndex := 0; partitionIndex < int(cfg.PartitionCountOrDefault()); partitionIndex++ {
 		p, err := NewPartition(cfg, uint32(partitionIndex))
@@ -27,6 +32,7 @@ func New(cfg Config) (*Diskq, error) {
 }
 
 type Diskq struct {
+	id         UUID
 	cfg        Config
 	partitions []*Partition
 }
@@ -100,6 +106,22 @@ func (dq *Diskq) Sync() error {
 	return nil
 }
 
+func (dq *Diskq) writeSentinel() error {
+	sentinelPath := filepath.Join(dq.cfg.Path, "owner")
+	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+
+	_, err = sf.Write(dq.id[:])
+	return err
+}
+
+func (dq *Diskq) releaseSentinel() error {
+	return os.Remove(filepath.Join(dq.cfg.Path, "owner"))
+}
+
 func maybeSync(wr io.Writer) error {
 	if typed, ok := wr.(*os.File); ok {
 		return typed.Sync()
@@ -107,11 +129,13 @@ func maybeSync(wr io.Writer) error {
 	return nil
 }
 
+// Close releases any resources associated with the diskq and
+// removes the sentinel file.
 func (dq *Diskq) Close() error {
 	for _, p := range dq.partitions {
 		_ = p.Close()
 	}
-	return nil
+	return dq.releaseSentinel()
 }
 
 //

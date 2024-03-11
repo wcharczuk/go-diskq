@@ -24,6 +24,14 @@ func assert_noerror(t *testing.T, err error) {
 	}
 }
 
+func assert_error(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("expected err to set")
+		t.FailNow()
+	}
+}
+
 func assert_notnil(t *testing.T, a any) {
 	t.Helper()
 	if isNil(a) {

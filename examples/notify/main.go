@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,7 +12,12 @@ import (
 	"github.com/wcharczuk/go-diskq"
 )
 
+var flagInterval = flag.Duration("interval", 5*time.Second, "The mocked publish interval")
+var flagConsumerDelay = flag.Duration("delay", 30*time.Second, "The delay before starting consumers")
+
 func main() {
+	flag.Parse()
+
 	tempPath, done := tempDir()
 	defer done()
 
@@ -27,7 +33,7 @@ func main() {
 
 	var messagesPublished uint64
 	go func() {
-		for range time.Tick(5 * time.Second) {
+		for range time.Tick(*flagInterval) {
 			atomic.AddUint64(&messagesPublished, 1)
 			partition, offset, err := dq.Push(diskq.Message{
 				PartitionKey: fmt.Sprintf("message-%d", messagesPublished),
@@ -39,6 +45,8 @@ func main() {
 			fmt.Printf("-> published message; partition=%d offset=%d partition_key=%s\n", partition, offset, fmt.Sprintf("message-%d", messagesPublished))
 		}
 	}()
+
+	time.Sleep(*flagConsumerDelay)
 
 	c0, err := dq.Consume(0, diskq.ConsumerOptions{
 		StartAtBehavior: diskq.ConsumerStartAtBeginning,
