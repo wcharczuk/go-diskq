@@ -40,7 +40,7 @@ func Test_Diskq_create(t *testing.T) {
 
 	dirEntries, err := os.ReadDir(tempPath)
 	assert_noerror(t, err)
-	assert_equal(t, 3, len(dirEntries))
+	assert_equal(t, 4, len(dirEntries))
 }
 
 func Test_Diskq_sentinel(t *testing.T) {
@@ -137,7 +137,7 @@ func Test_Diskq_createsNewSegments(t *testing.T) {
 
 	dirEntries, err := os.ReadDir(tempPath)
 	assert_noerror(t, err)
-	assert_equal(t, 3, len(dirEntries))
+	assert_equal(t, 4, len(dirEntries))
 
 	partitionIndex := dq.partitionForMessage(Message{PartitionKey: "one"}).index
 
