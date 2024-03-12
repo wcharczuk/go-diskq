@@ -43,7 +43,7 @@ func Test_Diskq_create(t *testing.T) {
 	assert_equal(t, 4, len(dirEntries))
 }
 
-func Test_Diskq_sentinel(t *testing.T) {
+func Test_Diskq_sentinelFailure(t *testing.T) {
 	tempPath, done := tempDir()
 	defer done()
 
@@ -298,4 +298,59 @@ func Test_Diskq_Vacuum_byAge(t *testing.T) {
 	offsets, err = getPartitionSegmentOffsets(cfg, 2)
 	assert_noerror(t, err)
 	assert_equal(t, 2, len(offsets))
+}
+
+func Test_Diskq_Vacuum_bySize(t *testing.T) {
+	tempPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:              tempPath,
+		PartitionCount:    3,
+		SegmentSizeBytes:  1024, // 1kb
+		RetentionMaxBytes: 4096, // 4kb
+	}
+
+	dq, err := New(cfg)
+	assert_noerror(t, err)
+
+	var partitionKeys = []string{"aaa", "bbb", "ccc"}
+	var index int
+	for x := 0; x < 64*3; x++ {
+		m := Message{
+			PartitionKey: partitionKeys[index],
+			Data:         []byte(strings.Repeat("a", 256)),
+		}
+
+		_, _, err := dq.Push(m)
+		assert_noerror(t, err)
+		index = (index + 1) % len(partitionKeys)
+	}
+
+	offsets, err := getPartitionSegmentOffsets(cfg, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 17, len(offsets))
+
+	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	assert_noerror(t, err)
+	assert_equal(t, 17, len(offsets))
+
+	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	assert_noerror(t, err)
+	assert_equal(t, 17, len(offsets))
+
+	err = dq.Vacuum()
+	assert_noerror(t, err)
+
+	offsets, err = getPartitionSegmentOffsets(cfg, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 4, len(offsets))
+
+	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	assert_noerror(t, err)
+	assert_equal(t, 4, len(offsets))
+
+	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	assert_noerror(t, err)
+	assert_equal(t, 4, len(offsets))
 }
