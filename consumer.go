@@ -18,12 +18,9 @@ import (
 //
 // There can be many consumers for a given partition, and you can consume partitions that may be
 // written to by external processes.
-func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
-	err := cfg.Validate()
+func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
+	_, err := os.Stat(formatPathForPartition(path, partitionIndex))
 	if err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(formatPathForPartition(cfg, partitionIndex)); err != nil {
 		return nil, fmt.Errorf("diskq; consumer; cannot stat data path: %w", err)
 	}
 	var notify *fsnotify.Watcher
@@ -35,7 +32,7 @@ func OpenConsumer(cfg Config, partitionIndex uint32, options ConsumerOptions) (*
 	}
 
 	c := &Consumer{
-		cfg:            cfg,
+		path:           path,
 		partitionIndex: partitionIndex,
 		options:        options,
 		messages:       make(chan MessageWithOffset),
@@ -107,7 +104,7 @@ const (
 // to be written to the active segment (this is the default behavior).
 type Consumer struct {
 	mu             sync.Mutex
-	cfg            Config
+	path           string
 	partitionIndex uint32
 	options        ConsumerOptions
 	messages       chan MessageWithOffset
@@ -253,12 +250,12 @@ func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	partitionPath := formatPathForPartition(c.cfg, c.partitionIndex)
+	partitionPath := formatPathForPartition(c.path, c.partitionIndex)
 	if c.options.EndBehavior != ConsumerEndAndClose {
 		go c.listenForFilesystemEvents()
 	}
 
-	offsets, err := getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
+	offsets, err := getPartitionSegmentOffsets(c.path, c.partitionIndex)
 	if err != nil {
 		return
 	}
@@ -273,11 +270,11 @@ func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, er
 	workingSegmentOffset, _ := getSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
 	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
 
-	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
+	c.indexHandle, err = openSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, extIndex)
 	if err != nil {
 		return
 	}
-	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
+	c.dataHandle, err = openSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, extData)
 	if err != nil {
 		return
 	}
@@ -431,7 +428,7 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	defer c.mu.Unlock()
 
 	var offsets []uint64
-	offsets, err = getPartitionSegmentOffsets(c.cfg, c.partitionIndex)
+	offsets, err = getPartitionSegmentOffsets(c.path, c.partitionIndex)
 	if err != nil {
 		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
 		return
@@ -443,12 +440,12 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	c.dataWriteEvents = make(chan struct{}, 1)
 
 	atomic.StoreUint64(&c.workingSegment, c.getNextSegment(offsets))
-	c.indexHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extIndex)
+	c.indexHandle, err = openSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, extIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot open index file: %w", err)
 		return
 	}
-	c.dataHandle, err = openSegmentFileForRead(c.cfg, c.partitionIndex, c.workingSegment, extData)
+	c.dataHandle, err = openSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, extData)
 	if err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot open data file: %w", err)
 		return
@@ -572,7 +569,7 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 	case ConsumerStartAtActiveSegmentStart:
 		return offsets[len(offsets)-1], nil
 	case ConsumerStartAtActiveSegmentLatest:
-		return getSegmentEndOffset(c.cfg, c.partitionIndex, offsets[len(offsets)-1])
+		return getSegmentEndOffset(c.path, c.partitionIndex, offsets[len(offsets)-1])
 	default:
 		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartAtBehavior)
 	}

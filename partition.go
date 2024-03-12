@@ -12,7 +12,7 @@ import (
 )
 
 func NewPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg, partitionIndex)
+	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
 	if _, err := os.Stat(intendedPath); err != nil {
 		return createPartition(cfg, partitionIndex)
 	}
@@ -20,12 +20,12 @@ func NewPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 }
 
 func createPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg, partitionIndex)
+	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
 	if err := os.MkdirAll(intendedPath, 0755); err != nil {
 		return nil, fmt.Errorf("diskq; create partition; cannot create intended path: %w", err)
 	}
 
-	segment, err := CreateSegment(cfg, partitionIndex, 0)
+	segment, err := CreateSegment(cfg.Path, partitionIndex, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func createPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 }
 
 func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg, partitionIndex)
+	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
 	dirEntries, err := os.ReadDir(intendedPath)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; open partition; cannot read intended path: %w", err)
@@ -54,7 +54,7 @@ func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 	if err != nil {
 		return nil, err
 	}
-	segment, err := OpenSegment(cfg, partitionIndex, uint64(lastSegmentStartOffset))
+	segment, err := OpenSegment(cfg.Path, partitionIndex, uint64(lastSegmentStartOffset))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (p *Partition) GetOffset(offset uint64) (m Message, ok bool, err error) {
 	if err != nil || !ok {
 		return
 	}
-	m, ok, err = getSegmentOffset(p.cfg, p.index, startOffset, offset)
+	m, ok, err = getSegmentOffset(p.cfg.Path, p.index, startOffset, offset)
 	return
 }
 
@@ -105,7 +105,7 @@ func (p *Partition) Vacuum() error {
 		return nil
 	}
 
-	segmentOffsets, err := getPartitionSegmentOffsets(p.cfg, p.index)
+	segmentOffsets, err := getPartitionSegmentOffsets(p.cfg.Path, p.index)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (p *Partition) Close() error {
 
 func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (startOffset uint64, ok bool, err error) {
 	var entries []uint64
-	entries, err = getPartitionSegmentOffsets(p.cfg, p.index)
+	entries, err = getPartitionSegmentOffsets(p.cfg.Path, p.index)
 	if err != nil {
 		return
 	}
@@ -172,7 +172,7 @@ func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
-	newActive, err := CreateSegment(p.cfg, p.index, p.activeSegment.endOffset)
+	newActive, err := CreateSegment(p.cfg.Path, p.index, p.activeSegment.endOffset)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = getSegmentEndTimestamp(p.cfg, p.index, startOffset)
+	endTimestamp, err = getSegmentEndTimestamp(p.cfg.Path, p.index, startOffset)
 	if err != nil {
 		return
 	}
@@ -196,7 +196,7 @@ func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegmen
 }
 
 func (p *Partition) vacuumSegment(startOffset uint64) error {
-	segmentRoot := formatPathForSegment(p.cfg, p.index, startOffset)
+	segmentRoot := formatPathForSegment(p.cfg.Path, p.index, startOffset)
 	if err := os.Remove(segmentRoot + extData); err != nil {
 		return err
 	}
@@ -211,13 +211,13 @@ func (p *Partition) vacuumSegment(startOffset uint64) error {
 
 func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 	var offsets []uint64
-	offsets, err = getPartitionSegmentOffsets(p.cfg, p.index)
+	offsets, err = getPartitionSegmentOffsets(p.cfg.Path, p.index)
 	if err != nil {
 		return
 	}
 	var info fs.FileInfo
 	for _, offset := range offsets {
-		segmentRoot := formatPathForSegment(p.cfg, p.index, offset)
+		segmentRoot := formatPathForSegment(p.cfg.Path, p.index, offset)
 		info, err = os.Stat(segmentRoot + extData)
 		if err != nil {
 			return
@@ -227,10 +227,10 @@ func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
 	return
 }
 
-func getSegmentEndTimestamp(cfg Config, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
+func getSegmentEndTimestamp(path string, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
 	var segment segmentTimeIndex
 	var f *os.File
-	f, err = os.Open(formatPathForSegment(cfg, partitionIndex, startOffset) + extTimeIndex)
+	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extTimeIndex)
 	if err != nil {
 		return
 	}
@@ -247,10 +247,10 @@ func getSegmentEndTimestamp(cfg Config, partitionIndex uint32, startOffset uint6
 	return
 }
 
-func getSegmentEndOffset(cfg Config, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
+func getSegmentEndOffset(path string, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
 	var segment segmentIndex
 	var f *os.File
-	f, err = os.Open(formatPathForSegment(cfg, partitionIndex, startOffset) + extIndex)
+	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extIndex)
 	if err != nil {
 		return
 	}
@@ -289,8 +289,8 @@ func getSegmentStartOffsetForOffset(entries []uint64, offset uint64) (uint64, bo
 	return 0, false
 }
 
-func getPartitionSegmentOffsets(cfg Config, partitionIndex uint32) (output []uint64, err error) {
-	entries, err := os.ReadDir(formatPathForPartition(cfg, partitionIndex))
+func getPartitionSegmentOffsets(path string, partitionIndex uint32) (output []uint64, err error) {
+	entries, err := os.ReadDir(formatPathForPartition(path, partitionIndex))
 	if err != nil {
 		return nil, err
 	}

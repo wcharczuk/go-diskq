@@ -33,10 +33,6 @@ func main() {
 
 	fmt.Printf("using data path: %s\n", path)
 
-	cfg := diskq.Config{
-		Path: path,
-	}
-
 	var startBehavior = diskq.ConsumerStartAtBeginning
 	switch *flagStartBehavior {
 	case "beginning":
@@ -80,7 +76,7 @@ func main() {
 		consumerOptions.StartAtOffset = marker.Latest()
 	}
 
-	consumer, err := diskq.OpenConsumer(cfg, uint32(*flagPartition), consumerOptions)
+	consumer, err := diskq.OpenConsumer(path, uint32(*flagPartition), consumerOptions)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return

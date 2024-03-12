@@ -76,7 +76,7 @@ func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok 
 //
 // It's really just a thin wrapper in practice around `OpenConsumer`.
 func (dq *Diskq) Consume(partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
-	return OpenConsumer(dq.cfg, partitionIndex, options)
+	return OpenConsumer(dq.cfg.Path, partitionIndex, options)
 }
 
 // Vacuum deletes old segments from all partitions

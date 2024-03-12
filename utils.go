@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-func formatPathForPartition(cfg Config, partitionIndex uint32) string {
+func formatPathForPartition(path string, partitionIndex uint32) string {
 	return filepath.Join(
-		cfg.Path,
+		path,
 		formatPartitionIndexForPath(partitionIndex),
 	)
 }
 
-func formatPathForSegment(cfg Config, partitionIndex uint32, startOffset uint64) string {
+func formatPathForSegment(path string, partitionIndex uint32, startOffset uint64) string {
 	return filepath.Join(
-		cfg.Path,
+		path,
 		formatPartitionIndexForPath(partitionIndex),
 		formatStartOffsetForPath(startOffset),
 	)

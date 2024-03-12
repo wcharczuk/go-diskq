@@ -175,7 +175,7 @@ func Test_Diskq_createsNewSegments(t *testing.T) {
 
 	partitionIndex := dq.partitionForMessage(Message{PartitionKey: "one"}).index
 
-	partitionDirEntries, err := os.ReadDir(formatPathForPartition(cfg, partitionIndex))
+	partitionDirEntries, err := os.ReadDir(formatPathForPartition(cfg.Path, partitionIndex))
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(partitionDirEntries))
 
@@ -188,7 +188,7 @@ func Test_Diskq_createsNewSegments(t *testing.T) {
 		assert_noerror(t, err)
 	}
 
-	partitionDirEntries, err = os.ReadDir(formatPathForPartition(cfg, partitionIndex))
+	partitionDirEntries, err = os.ReadDir(formatPathForPartition(cfg.Path, partitionIndex))
 	assert_noerror(t, err)
 	assert_equal(t, 6, len(partitionDirEntries))
 }
@@ -272,30 +272,30 @@ func Test_Diskq_Vacuum_byAge(t *testing.T) {
 		}
 	}
 
-	offsets, err := getPartitionSegmentOffsets(cfg, 0)
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 1)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 2)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 
 	err = dq.Vacuum()
 	assert_noerror(t, err)
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 0)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 2, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 1)
 	assert_noerror(t, err)
 	assert_equal(t, 2, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 2)
 	assert_noerror(t, err)
 	assert_equal(t, 2, len(offsets))
 }
@@ -327,30 +327,30 @@ func Test_Diskq_Vacuum_bySize(t *testing.T) {
 		index = (index + 1) % len(partitionKeys)
 	}
 
-	offsets, err := getPartitionSegmentOffsets(cfg, 0)
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 17, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 1)
 	assert_noerror(t, err)
 	assert_equal(t, 17, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 2)
 	assert_noerror(t, err)
 	assert_equal(t, 17, len(offsets))
 
 	err = dq.Vacuum()
 	assert_noerror(t, err)
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 0)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 1)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 1)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 
-	offsets, err = getPartitionSegmentOffsets(cfg, 2)
+	offsets, err = getPartitionSegmentOffsets(cfg.Path, 2)
 	assert_noerror(t, err)
 	assert_equal(t, 4, len(offsets))
 }

@@ -46,7 +46,7 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 
 	// now we need to tear apart the individual partition files
 
-	index00, err := os.ReadFile(formatPathForSegment(cfg, uint32(expectPartitionKey), 0) + extIndex)
+	index00, err := os.ReadFile(formatPathForSegment(cfg.Path, uint32(expectPartitionKey), 0) + extIndex)
 	assert_noerror(t, err)
 
 	entries := readIndexEntries(bytes.NewReader(index00))
@@ -66,7 +66,7 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	assert_equal(t, 3*messageSize, entries[3].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[3].GetSizeBytes())
 
-	index01, err := os.ReadFile(formatPathForSegment(cfg, uint32(expectPartitionKey), 4) + extIndex)
+	index01, err := os.ReadFile(formatPathForSegment(cfg.Path, uint32(expectPartitionKey), 4) + extIndex)
 	assert_noerror(t, err)
 
 	entries = readIndexEntries(bytes.NewReader(index01))
@@ -136,7 +136,7 @@ func Test_getSegmentOffsets(t *testing.T) {
 		assert_noerror(t, err)
 	}
 
-	offsets, err := getPartitionSegmentOffsets(cfg, 01)
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 01)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 	assert_equal(t, []uint64{0, 13, 26}, offsets)
@@ -161,10 +161,10 @@ func Test_getSegmentEndOffset(t *testing.T) {
 		})
 		assert_noerror(t, err)
 	}
-	offsets, err := getPartitionSegmentOffsets(cfg, 01)
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 01)
 	assert_noerror(t, err)
 
-	offset, err := getSegmentEndOffset(cfg, 01, offsets[len(offsets)-1])
+	offset, err := getSegmentEndOffset(cfg.Path, 01, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, 31, offset)
 }
@@ -178,14 +178,14 @@ func Test_getSegmentEndOffset_empty(t *testing.T) {
 		SegmentSizeBytes: 1024,
 	}
 
-	segmentPath := formatPathForSegment(cfg, 1, 0)
+	segmentPath := formatPathForSegment(cfg.Path, 1, 0)
 	_ = os.MkdirAll(filepath.Dir(segmentPath), 0755)
 
 	f, err := os.Create(segmentPath + extIndex)
 	assert_noerror(t, err)
 	assert_noerror(t, f.Close())
 
-	offset, err := getSegmentEndOffset(cfg, 01, 0)
+	offset, err := getSegmentEndOffset(cfg.Path, 01, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 0, offset)
 }
@@ -242,11 +242,11 @@ func Test_getSegmentEndTimestamp(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg, 0)
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := getSegmentEndTimestamp(cfg, 0, offsets[1])
+	endTimestamp, err := getSegmentEndTimestamp(cfg.Path, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), endTimestamp)
 }

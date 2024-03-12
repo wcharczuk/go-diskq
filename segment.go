@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
-func CreateSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segment, error) {
-	intendedPathWithoutExtension := formatPathForSegment(cfg, partitionIndex, startOffset)
+// CreateSegment creates a segment file at a given data path, for a given partition, and for
+// a given start offset which will be the effective filename.
+func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
+	intendedPathWithoutExtension := formatPathForSegment(path, partitionIndex, startOffset)
 	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
@@ -34,8 +36,8 @@ func CreateSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segm
 	}, nil
 }
 
-func OpenSegment(cfg Config, partitionIndex uint32, startOffset uint64) (*Segment, error) {
-	intendedPathWithoutExtension := formatPathForSegment(cfg, partitionIndex, startOffset)
+func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
+	intendedPathWithoutExtension := formatPathForSegment(path, partitionIndex, startOffset)
 	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
@@ -154,9 +156,9 @@ func maybeClose(wr io.Writer) {
 	}
 }
 
-func getSegmentOffset(cfg Config, partitionIndex uint32, startOffset, offset uint64) (m Message, ok bool, err error) {
+func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset uint64) (m Message, ok bool, err error) {
 	var indexHandle *os.File
-	indexHandle, err = openSegmentFileForRead(cfg, partitionIndex, startOffset, extIndex)
+	indexHandle, err = openSegmentFileForRead(path, partitionIndex, startOffset, extIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot open index file: %w", err)
 		return
@@ -164,7 +166,7 @@ func getSegmentOffset(cfg Config, partitionIndex uint32, startOffset, offset uin
 	defer func() { _ = indexHandle.Close() }()
 
 	var dataHandle *os.File
-	dataHandle, err = openSegmentFileForRead(cfg, partitionIndex, startOffset, extData)
+	dataHandle, err = openSegmentFileForRead(path, partitionIndex, startOffset, extData)
 	if err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot open data file: %w", err)
 		return
@@ -199,7 +201,7 @@ func getSegmentOffset(cfg Config, partitionIndex uint32, startOffset, offset uin
 	return
 }
 
-func openSegmentFileForRead(cfg Config, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
-	workingSegmentPath := formatPathForSegment(cfg, partitionIndex, startOffset)
+func openSegmentFileForRead(path string, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
+	workingSegmentPath := formatPathForSegment(path, partitionIndex, startOffset)
 	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0644)
 }

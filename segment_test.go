@@ -12,14 +12,10 @@ func Test_Segment_CreateSegment(t *testing.T) {
 	tempPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path: tempPath,
-	}
-
-	err := os.MkdirAll(formatPathForPartition(cfg, 0), 0755)
+	err := os.MkdirAll(formatPathForPartition(tempPath, 0), 0755)
 	assert_noerror(t, err)
 
-	segment, err := CreateSegment(cfg, 0, 123)
+	segment, err := CreateSegment(tempPath, 0, 123)
 	assert_noerror(t, err)
 
 	assert_notnil(t, segment)
