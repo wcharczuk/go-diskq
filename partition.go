@@ -74,9 +74,6 @@ func (p *Partition) GetOffset(offset uint64) (m Message, ok bool, err error) {
 	defer p.mu.Unlock()
 	startOffset, ok, err := p.getSegmentForOffsetUnsafe(offset)
 	if err != nil || !ok {
-		// there can be an issue with reading the dir entries
-		// - or -
-		// the offset could belong to a vacuumed segment
 		return
 	}
 	m, ok, err = getSegmentOffset(p.cfg, p.index, startOffset, offset)

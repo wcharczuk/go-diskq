@@ -60,13 +60,17 @@ func assert_equal(t *testing.T, expected, actual any, extra ...any) {
 	}
 }
 
-// func assert_notequal(t *testing.T, expected, actual any) {
-// 	t.Helper()
-// 	if areEqual(expected, actual) {
-// 		t.Errorf("not equal expectation failed; expected value: %v, actual value: %v", expected, actual)
-// 		t.FailNow()
-// 	}
-// }
+func assert_notequal(t *testing.T, expected, actual any, extra ...any) {
+	t.Helper()
+	if areEqual(expected, actual) {
+		if len(extra) > 0 {
+			t.Errorf("not equal expectation failed; expected value: %v, actual value: %v (%s)", expected, actual, fmt.Sprint(extra...))
+		} else {
+			t.Errorf("not equal expectation failed; expected value: %v, actual value: %v", expected, actual)
+		}
+		t.FailNow()
+	}
+}
 
 func areEqual(expected, actual any) bool {
 	if isNil(expected) && isNil(actual) {
