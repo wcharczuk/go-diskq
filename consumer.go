@@ -157,41 +157,26 @@ func (c *Consumer) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.done != nil {
-		close(c.done)
-		c.done = nil
+	if c.done == nil {
+		return nil
 	}
-	if c.messages != nil {
-		close(c.messages)
-		c.messages = nil
-	}
-	if c.errors != nil {
-		close(c.errors)
-		c.errors = nil
-	}
-	if c.advanceEvents != nil {
-		close(c.advanceEvents)
-		c.advanceEvents = nil
-	}
-	if c.indexWriteEvents != nil {
-		close(c.indexWriteEvents)
-		c.indexWriteEvents = nil
-	}
-	if c.dataWriteEvents != nil {
-		close(c.dataWriteEvents)
-		c.dataWriteEvents = nil
-	}
-	if c.indexHandle != nil {
-		_ = c.indexHandle.Close()
-		c.indexHandle = nil
-	}
-	if c.dataHandle != nil {
-		_ = c.dataHandle.Close()
-		c.dataHandle = nil
-	}
+
+	close(c.done)
+	c.done = nil
+	close(c.messages)
+	c.messages = nil
+	close(c.errors)
+	c.errors = nil
+	close(c.advanceEvents)
+	c.advanceEvents = nil
+	close(c.indexWriteEvents)
+	c.indexWriteEvents = nil
+	close(c.dataWriteEvents)
+	c.dataWriteEvents = nil
+	_ = c.indexHandle.Close()
+	_ = c.dataHandle.Close()
 	if c.notify != nil {
 		_ = c.notify.Close()
-		c.notify = nil
 	}
 	return nil
 }
@@ -331,14 +316,12 @@ func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, er
 
 func (c *Consumer) listenForFilesystemEvents() {
 	for {
-		if c.notify == nil {
-			return
-		}
 		select {
 		case <-c.done:
 			return
 		default:
 		}
+
 		select {
 		case <-c.done:
 			return
@@ -484,6 +467,8 @@ func (c *Consumer) waitForNewOffset(workingSegmentData *segmentIndex) (ok bool, 
 sized:
 	for {
 		select {
+		case <-c.done:
+			return
 		case _, ok = <-c.advanceEvents:
 			if !ok {
 				return
