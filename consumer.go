@@ -171,7 +171,9 @@ func (c *Consumer) Close() error {
 	close(c.indexWriteEvents)
 	close(c.dataWriteEvents)
 	_ = c.indexHandle.Close()
+	c.indexHandle = nil
 	_ = c.dataHandle.Close()
+	c.dataHandle = nil
 	if c.notify != nil {
 		_ = c.notify.Close()
 	}
@@ -552,8 +554,12 @@ func (c *Consumer) getNextSegment(offsets []uint64) (nextWorkingSegment uint64) 
 }
 
 func (c *Consumer) error(err error) {
-	if err != nil && c.errors != nil {
-		c.errors <- err
+	if err != nil && c.done != nil {
+		select {
+		case <-c.done:
+			return
+		case c.errors <- err:
+		}
 	}
 }
 
