@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/signal"
 
@@ -77,76 +76,30 @@ func main() {
 		}
 	}
 
-	partitions, err := getPartitionCount(*flagPath)
+	consumerGroup, err := diskq.OpenConsumerGroup(*flagPath, func(_ uint32) diskq.ConsumerOptions { return consumerOptions })
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
-
-	var errors = make(chan error, 1)
-	var consumersDone = make(chan struct{}, partitions)
-	for x := 0; x < partitions; x++ {
-		consumer, err := diskq.OpenConsumer(*flagPath, uint32(x), consumerOptions)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return
-		}
-		defer func() { _ = consumer.Close() }()
-		go func() {
-			defer func() {
-				consumersDone <- struct{}{}
-			}()
-			for {
-				select {
-				case msg, ok := <-consumer.Messages():
-					if !ok {
-						return
-					}
-					fmt.Println(string(msg.Data))
-				case err, ok := <-consumer.Errors():
-					if !ok {
-						return
-					}
-					if err != nil {
-						errors <- err
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt)
-	var finishedConsumers int
-	for {
-		select {
-		case <-shutdown:
-			return
-		case <-consumersDone:
-			finishedConsumers++
-			if finishedConsumers == partitions {
+	defer func() { _ = consumerGroup.Close() }()
+	go func() {
+		for {
+			msg, ok := <-consumerGroup.Messages()
+			if !ok {
 				return
 			}
-		case err, _ = <-errors:
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err.Error())
-			}
-			return
+			fmt.Println(string(msg.Data))
 		}
-	}
-}
-
-func getPartitionCount(path string) (count int, err error) {
-	var entries []fs.DirEntry
-	entries, err = os.ReadDir(path)
-	if err != nil {
+	}()
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt)
+	select {
+	case <-shutdown:
+		return
+	case err, _ = <-consumerGroup.Errors():
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
 		return
 	}
-	for _, e := range entries {
-		if e.IsDir() {
-			count++
-		}
-	}
-	return
 }

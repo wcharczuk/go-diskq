@@ -56,7 +56,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 
 // ConsumerOptions are options that control how consumers behave.
 type ConsumerOptions struct {
-	StartAtBehavior ConsumerStartAtBehavior
+	StartAtBehavior ConsumerStartBehavior
 	StartAtOffset   uint64
 	EndBehavior     ConsumerEndBehavior
 	EndAtOffset     uint64
@@ -71,13 +71,13 @@ type MessageWithOffset struct {
 	Offset         uint64
 }
 
-// ConsumerStartAtBehavior controls how the consumer determines the
+// ConsumerStartBehavior controls how the consumer determines the
 // first offset it will read from.
-type ConsumerStartAtBehavior uint8
+type ConsumerStartBehavior uint8
 
 // ConsumerStartAtBehavior values.
 const (
-	ConsumerStartAtBeginning ConsumerStartAtBehavior = iota
+	ConsumerStartAtBeginning ConsumerStartBehavior = iota
 	ConsumerStartAtOffset
 	ConsumerStartAtActiveSegmentStart
 	ConsumerStartAtActiveSegmentLatest
@@ -159,17 +159,17 @@ func (c *Consumer) Close() error {
 	}
 
 	close(c.done)
+	// NOTE (wc): we have to set this to be nil
+	// 	so that we'll know if we've closed the consumer.
+	//	We should _not_ set read channels to nil because they
+	//	will not show as closed on read.
 	c.done = nil
+
 	close(c.messages)
-	c.messages = nil
 	close(c.errors)
-	c.errors = nil
 	close(c.advanceEvents)
-	c.advanceEvents = nil
 	close(c.indexWriteEvents)
-	c.indexWriteEvents = nil
 	close(c.dataWriteEvents)
-	c.dataWriteEvents = nil
 	_ = c.indexHandle.Close()
 	_ = c.dataHandle.Close()
 	if c.notify != nil {
