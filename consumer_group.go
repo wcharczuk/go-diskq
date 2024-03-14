@@ -26,6 +26,12 @@ func OpenConsumerGroup(path string, options func(uint32) ConsumerOptions) (*Cons
 	return cg, nil
 }
 
+// ConsumerGroupOptions returns a given set of consumer options for any
+// consumers created for a consumer group.
+func ConsumerGroupOptions(opts ConsumerOptions) func(uint32) ConsumerOptions {
+	return func(_ uint32) ConsumerOptions { return opts }
+}
+
 // ConsumerGroup is a consumer that reads from all partitions at once, and periodically
 // scans for new partitions, or stops reading partitions that may have been deleted.
 //
@@ -67,9 +73,7 @@ func (cg *ConsumerGroup) Close() error {
 		_ = consumer.Close()
 	}
 	close(cg.messages)
-	cg.messages = nil
 	close(cg.errors)
-	cg.errors = nil
 	return nil
 }
 
@@ -188,7 +192,7 @@ func (cg *ConsumerGroup) pipeEvents(consumer *Consumer, consumerStarted chan str
 }
 
 func (cg *ConsumerGroup) error(err error) (ok bool) {
-	if err != nil {
+	if cg.done != nil {
 		select {
 		case cg.errors <- err:
 			ok = true
@@ -197,7 +201,6 @@ func (cg *ConsumerGroup) error(err error) (ok bool) {
 			return
 		}
 	}
-	ok = true
 	return
 }
 
