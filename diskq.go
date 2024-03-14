@@ -21,6 +21,9 @@ func New(cfg Config) (*Diskq, error) {
 		id:  UUIDv4(),
 		cfg: cfg,
 	}
+	if err := os.MkdirAll(cfg.Path, 0755); err != nil {
+		return nil, fmt.Errorf("diskq; cannot ensure data directory: %w", err)
+	}
 	if err := d.writeSentinel(); err != nil {
 		return nil, err
 	}

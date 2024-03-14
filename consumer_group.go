@@ -56,9 +56,11 @@ func (cg *ConsumerGroup) Errors() <-chan error {
 func (cg *ConsumerGroup) Close() error {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
+
 	if cg.done == nil {
 		return nil
 	}
+
 	close(cg.done)
 	cg.done = nil
 	for _, consumer := range cg.consumers {

@@ -67,6 +67,7 @@ func main() {
 		signal.Notify(shutdown, os.Interrupt)
 		select {
 		case <-shutdown:
+			signal.Reset(os.Interrupt)
 			return
 		case err, _ = <-consumer.Errors():
 			if err != nil {
@@ -81,7 +82,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
-	defer func() { _ = consumerGroup.Close() }()
+	defer func() {
+		_ = consumerGroup.Close()
+	}()
 	go func() {
 		for {
 			msg, ok := <-consumerGroup.Messages()
@@ -95,6 +98,7 @@ func main() {
 	signal.Notify(shutdown, os.Interrupt)
 	select {
 	case <-shutdown:
+		signal.Reset(os.Interrupt)
 		return
 	case err, _ = <-consumerGroup.Errors():
 		if err != nil {

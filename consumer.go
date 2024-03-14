@@ -170,10 +170,14 @@ func (c *Consumer) Close() error {
 	close(c.advanceEvents)
 	close(c.indexWriteEvents)
 	close(c.dataWriteEvents)
+
 	_ = c.indexHandle.Close()
 	c.indexHandle = nil
+
 	_ = c.dataHandle.Close()
 	c.dataHandle = nil
+
+	// we may not be notifying at all!
 	if c.notify != nil {
 		_ = c.notify.Close()
 	}
@@ -249,9 +253,6 @@ func (c *Consumer) read() {
 }
 
 func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	partitionPath := formatPathForPartition(c.path, c.partitionIndex)
 	if c.options.EndBehavior != ConsumerEndAndClose {
 		go c.listenForFilesystemEvents()
@@ -426,9 +427,6 @@ func (c *Consumer) advanceToNextSegment(workingSegmentData *segmentIndex) (ok bo
 }
 
 func (c *Consumer) advanceFilesToNextSegment() (err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	var offsets []uint64
 	offsets, err = getPartitionSegmentOffsets(c.path, c.partitionIndex)
 	if err != nil {
