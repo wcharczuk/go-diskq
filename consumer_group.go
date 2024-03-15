@@ -1,9 +1,6 @@
 package diskq
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -219,35 +216,4 @@ func (cg *ConsumerGroup) error(err error) (ok bool) {
 		}
 	}
 	return
-}
-
-func getPartitions(path string) ([]uint32, error) {
-	dirEntries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	output := make([]uint32, 0, len(dirEntries))
-	for _, de := range dirEntries {
-		if !de.IsDir() {
-			continue
-		}
-		identifier, err := strconv.ParseUint(filepath.Base(de.Name()), 10, 32)
-		if err != nil {
-			return nil, err
-		}
-		output = append(output, uint32(identifier))
-	}
-	return output, nil
-}
-
-func getPartitionsLookup(path string) (map[uint32]struct{}, error) {
-	partitionIndexes, err := getPartitions(path)
-	if err != nil {
-		return nil, err
-	}
-	output := make(map[uint32]struct{})
-	for _, partitionIndex := range partitionIndexes {
-		output[partitionIndex] = struct{}{}
-	}
-	return output, nil
 }

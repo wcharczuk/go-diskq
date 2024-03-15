@@ -40,7 +40,11 @@ func Test_Diskq_create(t *testing.T) {
 
 	dirEntries, err := os.ReadDir(tempPath)
 	assert_noerror(t, err)
-	assert_equal(t, 4, len(dirEntries))
+	assert_equal(t, 2, len(dirEntries))
+
+	dirEntries, err = os.ReadDir(formatPathForPartitions(tempPath))
+	assert_noerror(t, err)
+	assert_equal(t, 3, len(dirEntries))
 }
 
 func Test_Diskq_sentinelFailure(t *testing.T) {
@@ -95,7 +99,11 @@ func Test_Diskq_create_thenOpen(t *testing.T) {
 
 		dirEntries, err := os.ReadDir(tempPath)
 		assert_noerror(t, err)
-		assert_equal(t, 4, len(dirEntries), "includes the sentinel")
+		assert_equal(t, 2, len(dirEntries))
+
+		dirEntries, err = os.ReadDir(formatPathForPartitions(tempPath))
+		assert_noerror(t, err)
+		assert_equal(t, 3, len(dirEntries))
 	}()
 
 	dq, err := New(cfg)
@@ -171,7 +179,11 @@ func Test_Diskq_createsNewSegments(t *testing.T) {
 
 	dirEntries, err := os.ReadDir(tempPath)
 	assert_noerror(t, err)
-	assert_equal(t, 4, len(dirEntries))
+	assert_equal(t, 2, len(dirEntries))
+
+	dirEntries, err = os.ReadDir(formatPathForPartitions(tempPath))
+	assert_noerror(t, err)
+	assert_equal(t, 3, len(dirEntries))
 
 	partitionIndex := dq.partitionForMessage(Message{PartitionKey: "one"}).index
 
