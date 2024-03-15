@@ -202,7 +202,7 @@ func Test_Diskq_createsNewSegments(t *testing.T) {
 
 	partitionDirEntries, err = os.ReadDir(formatPathForPartition(cfg.Path, partitionIndex))
 	assert_noerror(t, err)
-	assert_equal(t, 6, len(partitionDirEntries))
+	assert_equal(t, 6, len(partitionDirEntries), "we expect the partition to have some segments")
 }
 
 func Test_Diskq_GetOffset(t *testing.T) {
