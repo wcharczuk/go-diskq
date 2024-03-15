@@ -136,7 +136,6 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	if _, err = s.index.Write(s.segmentIndexEncodeBuffer.Bytes()); err != nil {
 		return
 	}
-
 	s.encodeBuffer.Reset()
 	s.endOffsetBytes += messageSizeBytes
 	s.endOffset++

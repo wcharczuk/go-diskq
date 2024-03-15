@@ -38,6 +38,9 @@ func New(cfg Config) (*Diskq, error) {
 }
 
 // Diskq is the root struct of the queue.
+//
+// It could be thought of primarily as the "producer" in the
+// streaming system; you will use this type to "Push" messages into the streams.
 type Diskq struct {
 	id         UUID
 	cfg        Config
@@ -73,13 +76,6 @@ func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok 
 	}
 	v, ok, err = dq.partitions[partitionIndex].GetOffset(offset)
 	return
-}
-
-// Consume returns a consumer for this diskq's config for a given partition.
-//
-// It's really just a thin wrapper in practice around `OpenConsumer`.
-func (dq *Diskq) Consume(partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
-	return OpenConsumer(dq.cfg.Path, partitionIndex, options)
 }
 
 // Vacuum deletes old segments from all partitions

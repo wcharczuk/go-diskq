@@ -51,14 +51,28 @@ type ConsumerGroup struct {
 	activeConsumers int32
 }
 
+// Messages returns a channel that will receive messages from
+// the individual consumers.
+//
+// You should use the `msg, ok := <-cg.Messages()` form of channel
+// reads when reading this channel to detect if the channel
+// is closed, which would indicate the all of the consumer group
+// consumers have reached the end of their respective partitions
+// with the end behavior of "close".
 func (cg *ConsumerGroup) Messages() <-chan MessageWithOffset {
 	return cg.messages
 }
 
+// Errors returns a channel that will receive errors from the
+// individual consumers.
 func (cg *ConsumerGroup) Errors() <-chan error {
 	return cg.errors
 }
 
+// Close closes the consumer groups and all the consumers
+// it may have started.
+//
+// Close is safe to call more than once.
 func (cg *ConsumerGroup) Close() error {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
@@ -76,6 +90,10 @@ func (cg *ConsumerGroup) Close() error {
 	close(cg.errors)
 	return nil
 }
+
+//
+// internal methods
+//
 
 func (cg *ConsumerGroup) start() {
 	defer func() {
@@ -123,7 +141,7 @@ func (cg *ConsumerGroup) consumerOptionsForPartition(partitionIndex uint32) Cons
 }
 
 func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
-	partitions, err := getPartitions(cg.path)
+	partitions, err := getPartitionsLookup(cg.path)
 	if err != nil {
 		if ok = cg.error(err); !ok {
 			return
@@ -163,7 +181,6 @@ func (cg *ConsumerGroup) pipeEvents(consumer *Consumer, consumerStarted chan str
 	defer func() {
 		cg.consumerExits <- struct{}{}
 	}()
-
 	close(consumerStarted)
 	for {
 		select {
@@ -204,12 +221,12 @@ func (cg *ConsumerGroup) error(err error) (ok bool) {
 	return
 }
 
-func getPartitions(path string) (map[uint32]struct{}, error) {
+func getPartitions(path string) ([]uint32, error) {
 	dirEntries, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
-	output := make(map[uint32]struct{})
+	output := make([]uint32, 0, len(dirEntries))
 	for _, de := range dirEntries {
 		if !de.IsDir() {
 			continue
@@ -218,7 +235,19 @@ func getPartitions(path string) (map[uint32]struct{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		output[uint32(identifier)] = struct{}{}
+		output = append(output, uint32(identifier))
+	}
+	return output, nil
+}
+
+func getPartitionsLookup(path string) (map[uint32]struct{}, error) {
+	partitionIndexes, err := getPartitions(path)
+	if err != nil {
+		return nil, err
+	}
+	output := make(map[uint32]struct{})
+	for _, partitionIndex := range partitionIndexes {
+		output[partitionIndex] = struct{}{}
 	}
 	return output, nil
 }

@@ -30,7 +30,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 		assert_equal(t, x, offset)
 	}
 
-	c, err := dq.Consume(0, ConsumerOptions{
+	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
 		StartAtBehavior: ConsumerStartAtBeginning,
 	})
 	assert_noerror(t, err)
@@ -72,7 +72,7 @@ func Test_Consumer_startFromBeginning_endAtLatest(t *testing.T) {
 		assert_equal(t, x, offset)
 	}
 
-	c, err := dq.Consume(0, ConsumerOptions{
+	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
 		StartAtBehavior: ConsumerStartAtBeginning,
 		EndBehavior:     ConsumerEndAndClose,
 	})

@@ -40,7 +40,7 @@ func main() {
 		}
 	}()
 
-	c0, err := dq.Consume(0, diskq.ConsumerOptions{
+	c0, err := diskq.OpenConsumer(cfg.Path, 0, diskq.ConsumerOptions{
 		StartAtBehavior: diskq.ConsumerStartAtBeginning,
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func main() {
 		}
 	}()
 
-	c1, err := dq.Consume(1, diskq.ConsumerOptions{
+	c1, err := diskq.OpenConsumer(cfg.Path, 1, diskq.ConsumerOptions{
 		StartAtBehavior: diskq.ConsumerStartAtBeginning,
 	})
 	if err != nil {
@@ -76,7 +76,7 @@ func main() {
 		}
 	}()
 
-	c2, _ := dq.Consume(2, diskq.ConsumerOptions{
+	c2, _ := diskq.OpenConsumer(cfg.Path, 2, diskq.ConsumerOptions{
 		StartAtBehavior: diskq.ConsumerStartAtBeginning,
 	})
 	go func() {
