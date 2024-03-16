@@ -32,7 +32,13 @@ Within each partition there are a number of triplets of files.
 - an index file that contains a triplet of uint64 values, the offset, the offset in bytes in the datafile the offset exists, and the size in bytes of the message.
 - a timeindex file that contains a pair of the offset, and the timestamp as a unix timestamp in nanos that represents the timestamp of the message.
 
-The binary encoding of the message itself is broken up into
+Each triplet of files represents a segment and is named after the first offset of the segment.
+
+Each segment is set to be a configurable size, and there can be many segments per partition. 
+
+The last segment, or the segment with the highest start offset, is the one that will be actively written to.
+
+The binary encoding of the message in the data file is broken up into:
 - a string partition key with a size prefix as bytes (i.e. [size][partition_key_bytes})
 - a timestamp in nanos as uint64
 - the message data as bytes with a size prefix (i.e. [size][data_bytes])
