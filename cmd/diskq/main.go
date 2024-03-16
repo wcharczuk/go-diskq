@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 
+	"github.com/urfave/cli/v3"
 	"github.com/wcharczuk/go-diskq"
 )
 
@@ -17,7 +19,52 @@ var flagEndBehavior = flag.String("end", "close", "The end behavior (one of 'wai
 var flagEndAtOffset = flag.Int("end-offset", 0, "The offset to end reading from (if the end behavior is 'at-offset')")
 
 func main() {
-	flag.Parse()
+	root := &cli.Command{
+		Name: "diskq",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "path",
+				Usage: "The path to the stream data",
+			},
+		},
+	}
+	if err := root.Run(context.Background(), os.Args); err != nil {
+		maybeFatal(err)
+	}
+}
+
+func maybeFatal(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+}
+
+func commandRead() *cli.Command {
+	return &cli.Command{
+		Name:  "read",
+		Usage: "Read raw message data from a stream and print to standard out",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:    "partition",
+				Aliases: []string{"p"},
+				Value:   -1,
+				Usage:   "A specific partition to read from (-1 will read from all partitions)",
+			},
+			&cli.StringFlag{
+				Name:  "start",
+				Value: "beginning",
+				Usage: "The consumer start behavior (one of 'beginning', 'at-offset', 'active-start', 'active-latest')",
+			},
+			&cli.UintFlag{
+				Name:  "start-at",
+				Usage: "The start at offset if the start behavior is `at-offset`",
+			},
+		},
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			return nil
+		},
+	}
 
 	var startBehavior = diskq.ConsumerStartAtBeginning
 	switch *flagStartBehavior {
