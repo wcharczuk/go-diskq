@@ -27,6 +27,11 @@ func GetStats(path string) (*Stats, error) {
 		output.SizeBytes += partitionStats.SizeBytes
 		output.TotalOffsets += (partitionStats.NewestOffset - partitionStats.OldestOffset)
 		output.Partitions = append(output.Partitions, *partitionStats)
+
+		partitionAge := partitionStats.NewestTimestamp.Sub(partitionStats.OldestTimestamp)
+		if partitionAge > output.Age {
+			output.Age = partitionAge
+		}
 	}
 	return &output, nil
 }
@@ -78,6 +83,7 @@ type Stats struct {
 	SizeBytes    uint64
 	InUse        bool
 	TotalOffsets uint64
+	Age          time.Duration
 	Partitions   []PartitionStats
 }
 
