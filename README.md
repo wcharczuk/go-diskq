@@ -20,20 +20,20 @@ A consumer will be notified of a new message on a stream in under a millisecond 
 ```
 ${DATA_PATH}/
   owner
-  partitions/
+  parts/
     000000/
-      000000000000000000000000.data
-      000000000000000000000000.index
-      000000000000000000000000.timeindex
+      00000000000000000000.data
+      00000000000000000000.index
+      00000000000000000000.timeindex
     000001/
-      000000000000000000000000.data
-      000000000000000000000000.index
-      000000000000000000000000.timeindex
+      00000000000000000000.data
+      00000000000000000000.index
+      00000000000000000000.timeindex
       ...
     000002/
-      000000000000000000000000.data
-      000000000000000000000000.index
-      000000000000000000000000.timeindex
+      00000000000000000000.data
+      00000000000000000000.index
+      00000000000000000000.timeindex
       ...
 ```
 
@@ -41,14 +41,14 @@ A `diskq` stream is rooted in a single directory.
 
 Within the directory there is an `owner` file if there is a currrent active producer so that we don't allow another producer to be created. The owner file will contain a single UUID that corresponds to the `*diskq.Diskq` instance that is the active producer for that stream.
 
-In addition to the `owner` file there is a `partitions` directory that contains sub-directory for each partition, named as a zero-padded integer corresponding to the partition index (e.g. `000003`.)
+In addition to the `owner` file there is a `parts` directory that contains sub-directory for each partition, named as a six-zero-padded integer corresponding to the partition index (e.g. `000003`.)
 
 Within each partition sub-directory there are a number of triplets of files, each triplet corresponding to a "segment":
 - A `.data` file which contains binary representations of each message (more on this representation below.)
 - A `.index` file that contains a stream of triplets of uint64 values: `[offset|bytes_offset_from_start|message_size_bytes]`
 - A `.timeindex` file that contains a stream of pairs of uint64 values: `[offset|timestamp_nanos]`
 
-Each triplet of files for a segment is named after the first offset of that segment, e.g. `00025` for a segment that starts with the `25` offset for the partition.
+Each triplet of files for a segment is has a prefix corresponding to the twenty-zero-padded integer of the first offset of that segment, e.g. `00000000000000000025` for a segment that starts with the `25` offset for the partition.
 
 The last segment of a partiton is referred to as the "active" segment, and is the segment that is currently being written to.
 
