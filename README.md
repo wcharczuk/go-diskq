@@ -23,25 +23,27 @@ More specifically the requirements of `diskq` were:
 
 A `diskq` stream is rooted in a single directory.
 
-Within the directory there is an `owner` file if there is a currrent active producer so that we don't allow another producer to be created.
+Within the directory there is an `owner` file if there is a currrent active producer so that we don't allow another producer to be created. The owner file will contain a single UUID that corresponds to the `*diskq.Diskq` instance that is the active producer for that stream.
 
-As well there is a `partitions` directory that contains sub-directory for each partition.
+In addition to the `owner` file there is a `partitions` directory that contains sub-directory for each partition, named as a zero-padded integer corresponding to the partition index (e.g. `000003`.)
 
-Within each partition there are a number of triplets of files.
-- a data file which contains binary representations of each message
-- an index file that contains a triplet of uint64 values, the offset, the offset in bytes in the datafile the offset exists, and the size in bytes of the message.
-- a timeindex file that contains a pair of the offset, and the timestamp as a unix timestamp in nanos that represents the timestamp of the message.
+Within each partition sub-directory there are a number of triplets of files, each triplet corresponding to a "segment":
+- A `.data` file which contains binary representations of each message (more on this representation below.)
+- A `.index` file that contains a stream of triplets of uint64 values: `[offset|bytes_offset_from_start|message_size_bytes]`
+- A `.timeindex` file that contains a stream of pairs of uint64 values: `[offset|timestamp_nanos]`
 
-Each triplet of files represents a segment and is named after the first offset of the segment.
+Each triplet of files for a segment is named after the first offset of that segment, e.g. `00025` for a segment that starts with the `25` offset for the partition.
 
-Each segment is set to be a configurable size, and there can be many segments per partition. 
+The last segment of a partiton is referred to as the "active" segment, and is the segment that is currently being written to.
 
-The last segment, or the segment with the highest start offset, is the one that will be actively written to.
+For the message data itself, the binary encoding of the message is as follows:
+- A varuint for the size of the partition key in bytes.
+- A byte array of that given size holding the partition key data.
+- A uint64 timestamp in nanos for the message timestamp.
+- A varuint for the size of the data int bytes.
+- A byte array of that given size holding the partition key data.
 
-The binary encoding of the message in the data file is broken up into:
-- a string partition key with a size prefix as bytes (i.e. [size][partition_key_bytes})
-- a timestamp in nanos as uint64
-- the message data as bytes with a size prefix (i.e. [size][data_bytes])
+As a result a messages minimum size in bytes is typically ~2+1+3+2 or 8 bytes in the data file.
 
 # `diskq` cli
 

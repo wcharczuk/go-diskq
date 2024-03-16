@@ -22,7 +22,8 @@ var globalFlags = []cli.Flag{
 
 func main() {
 	root := &cli.Command{
-		Name: "diskq",
+		Name:  "diskq",
+		Usage: "Interact with diskq streams on disk.",
 		Commands: []*cli.Command{
 			commandRead(),
 			commandWrite(),
@@ -38,7 +39,7 @@ func main() {
 func commandWrite() *cli.Command {
 	return &cli.Command{
 		Name:  "write",
-		Usage: "Write message data read from STDIN to a given stream",
+		Usage: "Write message data read from STDIN to a given stream.",
 		Flags: globalFlags,
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			dq, err := diskq.New(diskq.Config{
@@ -65,7 +66,7 @@ func commandWrite() *cli.Command {
 func commandVacuum() *cli.Command {
 	return &cli.Command{
 		Name:  "vacuum",
-		Usage: "Vacuum a given path based on configurable settings",
+		Usage: "Vacuum a given stream, that is delete segments out of retention.",
 		Flags: append(globalFlags,
 			&cli.IntFlag{
 				Name:  "max-bytes",
@@ -100,7 +101,7 @@ func commandVacuum() *cli.Command {
 func commandStats() *cli.Command {
 	return &cli.Command{
 		Name:  "stats",
-		Usage: "Show stats about a given stream as json",
+		Usage: "Show stats about a given stream as json.",
 		Flags: globalFlags,
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			stats, err := diskq.GetStats(cmd.String("path"))
@@ -115,7 +116,7 @@ func commandStats() *cli.Command {
 func commandRead() *cli.Command {
 	return &cli.Command{
 		Name:  "read",
-		Usage: "Read raw message data from a stream and print to standard out",
+		Usage: "Read raw message data from a stream and print to standard out.",
 		Flags: append(globalFlags,
 			&cli.IntFlag{
 				Name:    "partition",
@@ -142,7 +143,7 @@ func commandRead() *cli.Command {
 			&cli.StringFlag{
 				Name:  "end",
 				Value: diskq.ConsumerEndBehaviorClose.String(),
-				Usage: fmt.Sprintf("The consumer end behavior (one of '%s', '%s', '%s')",
+				Usage: fmt.Sprintf("The consumer end behavior (one of %q, %q, %q)",
 					diskq.ConsumerEndBehaviorClose.String(),
 					diskq.ConsumerEndBehaviorAtOffset.String(),
 					diskq.ConsumerEndBehaviorWait.String(),
