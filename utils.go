@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+func formatPathForSentinel(path string) string {
+	return filepath.Join(path, "owner")
+}
+
 func formatPathForPartitions(path string) string {
 	return filepath.Join(
 		path,

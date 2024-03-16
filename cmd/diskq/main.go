@@ -12,16 +12,17 @@ import (
 	"github.com/wcharczuk/go-diskq"
 )
 
+var globalFlags = []cli.Flag{
+	&cli.StringFlag{
+		Name:     "path",
+		Usage:    "The path to the stream data",
+		Required: true,
+	},
+}
+
 func main() {
 	root := &cli.Command{
 		Name: "diskq",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "path",
-				Usage:    "The path to the stream data",
-				Required: true,
-			},
-		},
 		Commands: []*cli.Command{
 			commandRead(),
 			commandWrite(),
@@ -38,6 +39,7 @@ func commandWrite() *cli.Command {
 	return &cli.Command{
 		Name:  "write",
 		Usage: "Write message data read from STDIN to a given stream",
+		Flags: globalFlags,
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			dq, err := diskq.New(diskq.Config{
 				Path: cmd.String("path"),
@@ -64,7 +66,7 @@ func commandVacuum() *cli.Command {
 	return &cli.Command{
 		Name:  "vacuum",
 		Usage: "Vacuum a given path based on configurable settings",
-		Flags: []cli.Flag{
+		Flags: append(globalFlags,
 			&cli.IntFlag{
 				Name:  "max-bytes",
 				Usage: "The maximum stream size in bytes",
@@ -75,17 +77,22 @@ func commandVacuum() *cli.Command {
 				Usage: "The maximum stream age as a duration",
 				Value: 48 * time.Hour,
 			},
-		},
+		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			dq, err := diskq.New(diskq.Config{
 				Path:              cmd.String("path"),
 				RetentionMaxBytes: cmd.Int("max-bytes"),
 				RetentionMaxAge:   cmd.Duration("max-age"),
 			})
+			defer func() { _ = dq.Close() }()
 			if err != nil {
 				return err
 			}
-			return dq.Vacuum()
+			if err := dq.Vacuum(); err != nil {
+				return nil
+			}
+			fmt.Println("vacuum ok!")
+			return nil
 		},
 	}
 }
@@ -94,6 +101,7 @@ func commandStats() *cli.Command {
 	return &cli.Command{
 		Name:  "stats",
 		Usage: "Show stats about a given stream as json",
+		Flags: globalFlags,
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			stats, err := diskq.GetStats(cmd.String("path"))
 			if err != nil {
@@ -108,7 +116,7 @@ func commandRead() *cli.Command {
 	return &cli.Command{
 		Name:  "read",
 		Usage: "Read raw message data from a stream and print to standard out",
-		Flags: []cli.Flag{
+		Flags: append(globalFlags,
 			&cli.IntFlag{
 				Name:    "partition",
 				Aliases: []string{"p"},
@@ -133,7 +141,7 @@ func commandRead() *cli.Command {
 				Name:  "end-offset",
 				Usage: "The end at offset if the end behavior is `at-offset`",
 			},
-		},
+		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			startBehavior, err := diskq.ParseConsumerStartBehavior(cmd.String("start"))
 			if err != nil {

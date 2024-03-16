@@ -5,7 +5,6 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -116,20 +115,18 @@ func (dq *Diskq) Close() error {
 // internal methods
 //
 
-func formatPathForSentinel(path string) string {
-	return filepath.Join(path, "owner")
-}
-
 func (dq *Diskq) writeSentinel() error {
 	sentinelPath := formatPathForSentinel(dq.cfg.Path)
 	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("diskq; cannot open stream in exclusive mode: %w", err)
 	}
 	defer func() { _ = sf.Close() }()
-
 	_, err = sf.Write(dq.id[:])
-	return err
+	if err != nil {
+		return fmt.Errorf("diskq; cannot set stream exclusive mode: %w", err)
+	}
+	return nil
 }
 
 func (dq *Diskq) releaseSentinel() error {
