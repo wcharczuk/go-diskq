@@ -13,7 +13,7 @@ The goal of `go-diskq` is to provide a single node equivalent of Kafka. Think wh
 
 It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
 
-A consumer will be notified of a new message on a stream in under a millisecond (often in single digit microseconds), making this useful for realtime applications.
+A consumer will be notified of a new message on a stream in under a millisecond (often in single digit microseconds depending on the platform), making this useful for realtime applications.
 
 # Stream file organization
 
