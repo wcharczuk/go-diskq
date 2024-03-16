@@ -80,7 +80,7 @@ func getSegmentNewestTimestamp(path string, partitionIndex uint32, startOffset u
 	return
 }
 
-func getSegmentOldestTimestamp(path string, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
+func getSegmentOldestTimestamp(path string, partitionIndex uint32, startOffset uint64) (oldest time.Time, err error) {
 	var segment segmentTimeIndex
 	var f *os.File
 	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extTimeIndex)
@@ -101,7 +101,40 @@ func getSegmentOldestTimestamp(path string, partitionIndex uint32, startOffset u
 	if err != nil {
 		return
 	}
-	ts = segment.GetTimestampUTC()
+	oldest = segment.GetTimestampUTC()
+	return
+}
+
+func getSegmentOldestNewestTimestamps(path string, partitionIndex uint32, startOffset uint64) (oldest, newest time.Time, err error) {
+	var segment segmentTimeIndex
+	var f *os.File
+	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extTimeIndex)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	var stat fs.FileInfo
+	stat, err = f.Stat()
+	if err != nil {
+		return
+	}
+	if stat.Size() < int64(segmentTimeIndexSize) {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	oldest = segment.GetTimestampUTC()
+	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	newest = segment.GetTimestampUTC()
 	return
 }
 

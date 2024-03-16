@@ -211,6 +211,122 @@ func Test_getSegmentNewestTimestamp(t *testing.T) {
 	assert_equal(t, time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC), endTimestamp)
 }
 
+func Test_getSegmentNewestOldestTimestamps(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             testPath,
+		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
+	}
+
+	p, err := createPartition(cfg, 00)
+	assert_noerror(t, err)
+	assert_notnil(t, p)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 11, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	err = p.closeActiveSegmentUnsafe()
+	assert_noerror(t, err)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	err = p.closeActiveSegmentUnsafe()
+	assert_noerror(t, err)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 14, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 3, len(offsets))
+
+	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[1])
+	assert_noerror(t, err)
+	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), oldest)
+	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), newest)
+}
+
+func Test_getSegmentNewestOldestTimestamps_empty(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             testPath,
+		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
+	}
+
+	p, err := createPartition(cfg, 00)
+	assert_noerror(t, err)
+	assert_notnil(t, p)
+
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 1, len(offsets))
+
+	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	assert_noerror(t, err)
+	assert_equal(t, true, oldest.IsZero())
+	assert_equal(t, true, newest.IsZero())
+}
+
+func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             testPath,
+		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
+	}
+
+	p, err := createPartition(cfg, 00)
+	assert_noerror(t, err)
+	assert_notnil(t, p)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 1, len(offsets))
+
+	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	assert_noerror(t, err)
+	assert_equal(t, false, oldest.IsZero())
+	assert_equal(t, false, newest.IsZero())
+	assert_equal(t, time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC), oldest)
+	assert_equal(t, time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC), newest)
+}
+
 func readIndexEntries(r io.Reader) (output []segmentIndex) {
 	for {
 		var si segmentIndex
