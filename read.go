@@ -19,7 +19,7 @@ import (
 //
 // Messages will be read in rotating order through the partitions, that is
 // each partition will read one message at a time, repeating until they're all done reading.
-func Read(path string, dst *[]MessageWithOffset) error {
+func Read(path string, fn func(MessageWithOffset) error) error {
 	partitionIndexes, err := getPartitions(path)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func Read(path string, dst *[]MessageWithOffset) error {
 				continue
 			}
 			hasActivePartitions = true
-			if err = p.read(dst); err != nil {
+			if err = p.read(fn); err != nil {
 				return err
 			}
 		}
@@ -104,7 +104,7 @@ func (rpi *readPartitionIterator) done() bool {
 	return rpi.indexHandle == nil && rpi.dataHandle == nil
 }
 
-func (rpi *readPartitionIterator) read(dst *[]MessageWithOffset) (err error) {
+func (rpi *readPartitionIterator) read(fn func(MessageWithOffset) error) (err error) {
 	var done bool
 	done, err = rpi.tryReadIndex()
 	if err != nil {
@@ -131,7 +131,7 @@ func (rpi *readPartitionIterator) read(dst *[]MessageWithOffset) (err error) {
 		err = fmt.Errorf("diskq; read; cannot decode message data from data file: %w", err)
 		return
 	}
-	*dst = append(*dst, MessageWithOffset{
+	err = fn(MessageWithOffset{
 		PartitionIndex: rpi.partitionIndex,
 		Offset:         rpi.workingSegmentData.GetOffset(),
 		Message:        m,
