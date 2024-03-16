@@ -7,19 +7,35 @@
 
 `go-diskq` is currently in pre-release testing, and should not be used in production.
 
-# About
+# Goals
 
-The goal of `go-diskq` is to provide a single node equivalent of Kafka. Think what sqlite is to something like Postgres, a library complete implementation of Kafka which writes to a local disk.
+The goal of `go-diskq` is to provide a single node equivalent of Kafka. Think what sqlite is to something like Postgres; a library complete implementation of Kafka which writes to a local disk.
 
-More specifically the requirements of `diskq` were:
-- Be entirely self-contained and defer to the filesystem as the source of truth.
-- Durable event producers that recorded events to disk for each event to prevent data loss on process shutdown.
-- Event consumers can be decoupled from the producer, that is run in a separate process, and receive messages exclusively through events in the filesystem.
-- Allow consumers to mark progress using offset markers, and resume from where they left off.
-- Have sub-millisecond latency from producing an event, to consuming that event.
-- Allow for `vacuum` operations, where events beyond a given data size limit, or age limit, can be culled.
+It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
 
-# File organization
+A consumer will be notified of a new message on a stream in under a millisecond (often in single digit microseconds), making this useful for realtime applications.
+
+# Stream file organization
+
+```
+${DATA_PATH}/
+  owner
+  partitions/
+    000000/
+      000000000000000000000000.data
+      000000000000000000000000.index
+      000000000000000000000000.timeindex
+    000001/
+      000000000000000000000000.data
+      000000000000000000000000.index
+      000000000000000000000000.timeindex
+      ...
+    000002/
+      000000000000000000000000.data
+      000000000000000000000000.index
+      000000000000000000000000.timeindex
+      ...
+```
 
 A `diskq` stream is rooted in a single directory.
 
@@ -47,4 +63,4 @@ As a result a messages minimum size in bytes is typically ~2+1+3+2 or 8 bytes in
 
 # `diskq` cli
 
-Included in the repository is a cli tool to read from disk data directories.
+Included in the repository is a cli tool to read from disk data directories, force vacuuming of partitions, display stats about a stream, and write new offsets to a stream.
