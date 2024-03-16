@@ -1,0 +1,26 @@
+digraph G {
+	node [shape=record];
+	rankdir=LR;
+
+	subgraph cluster_0 {
+		style=filled;
+		color=lightgrey;
+		node [style=filled,color=white];
+		p000_000 -> p000_024 -> p000_048 -> p000_072 -> p000_096 -> p000_120;
+	}
+
+	subgraph cluster_1 {
+		style=filled;
+		color=lightgrey;
+		node [style=filled,color=white];
+		p001_000 -> p001_024 -> p001_048 -> p001_072 -> p001_096;
+	}
+
+	subgraph cluster_2{
+		style=filled;
+		color=lightgrey;
+		node [style=filled,color=white];
+		p002_000 -> p002_024 -> p002_048 -> p002_072 -> p002_096 -> p002_120;
+	}
+
+}

@@ -1,6 +1,8 @@
 `diskq`
 =======
 
+![Diagram](https://github.com/wcharczuk/go-diskq/blob/main/_assets/hero.png)
+
 ## Caveats
 
 `go-diskq` is currently in pre-release testing, and should not be used in production.
