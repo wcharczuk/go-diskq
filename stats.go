@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"fmt"
 	"os"
 	"time"
 )
@@ -9,7 +10,7 @@ import (
 func GetStats(path string) (*Stats, error) {
 	partitions, err := getPartitions(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("diskq; get stats; cannot get partitions: %w", err)
 	}
 
 	output := Stats{
@@ -24,6 +25,8 @@ func GetStats(path string) (*Stats, error) {
 			return nil, err
 		}
 		output.SizeBytes += partitionStats.SizeBytes
+		output.TotalOffsets += (partitionStats.NewestOffset - partitionStats.OldestOffset)
+		output.Partitions = append(output.Partitions, *partitionStats)
 	}
 	return &output, nil
 }
@@ -34,33 +37,34 @@ func getPartitionStats(path string, partitionIndex uint32) (*PartitionStats, err
 	}
 	sizeBytes, err := getPartitionSizeBytes(path, partitionIndex)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("diskq; get stats; cannot get partition size bytes: %w", err)
 	}
 	output.SizeBytes = uint64(sizeBytes)
 
 	segments, err := getPartitionSegmentOffsets(path, partitionIndex)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("diskq; get stats; cannot get partition segment offsets: %w", err)
 	}
 
 	if len(segments) > 0 {
 		output.OldestOffset = segments[0]
 		output.OldestOffsetActive = segments[len(segments)-1]
+		output.NewestOffset, err = getSegmentNewestOffset(path, partitionIndex, segments[len(segments)-1])
+		if err != nil {
+			return nil, fmt.Errorf("diskq; get stats; cannot get partition newest offset: %w", err)
+		}
+
 		output.OldestTimestamp, err = getSegmentOldestTimestamp(path, partitionIndex, segments[0])
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("diskq; get stats; cannot get partition oldest timestamp: %w", err)
 		}
 		output.OldestTimestampActive, err = getSegmentOldestTimestamp(path, partitionIndex, segments[len(segments)-1])
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("diskq; get stats; cannot get partition oldest timestamp active: %w", err)
 		}
 		output.NewestTimestamp, err = getSegmentNewestTimestamp(path, partitionIndex, segments[len(segments)-1])
 		if err != nil {
-			return nil, err
-		}
-		output.NewestOffset, err = getSegmentNewestOffset(path, partitionIndex, segments[len(segments)-1])
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("diskq; get stats; cannot get partition newest timestamp: %w", err)
 		}
 	}
 
@@ -70,10 +74,11 @@ func getPartitionStats(path string, partitionIndex uint32) (*PartitionStats, err
 
 // Stats holds information about a diskq stream.
 type Stats struct {
-	Path       string
-	SizeBytes  uint64
-	InUse      bool
-	Partitions []PartitionStats
+	Path         string
+	SizeBytes    uint64
+	InUse        bool
+	TotalOffsets uint64
+	Partitions   []PartitionStats
 }
 
 // PartitionStats holds information about a diskq stream partition.

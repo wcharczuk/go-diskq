@@ -56,6 +56,15 @@ func getSegmentNewestTimestamp(path string, partitionIndex uint32, startOffset u
 	}
 	defer func() { _ = f.Close() }()
 
+	var stat fs.FileInfo
+	stat, err = f.Stat()
+	if err != nil {
+		return
+	}
+	if stat.Size() < int64(segmentTimeIndexSize) {
+		return
+	}
+
 	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
 		return
 	}
@@ -76,7 +85,12 @@ func getSegmentOldestTimestamp(path string, partitionIndex uint32, startOffset u
 	}
 	defer func() { _ = f.Close() }()
 
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
+	var stat fs.FileInfo
+	stat, err = f.Stat()
+	if err != nil {
+		return
+	}
+	if stat.Size() < int64(segmentTimeIndexSize) {
 		return
 	}
 	err = binary.Read(f, binary.LittleEndian, &segment)
