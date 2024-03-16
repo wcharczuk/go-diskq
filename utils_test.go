@@ -37,7 +37,7 @@ func Test_getSegmentOffsets(t *testing.T) {
 	assert_equal(t, []uint64{0, 13, 26}, offsets)
 }
 
-func Test_getSegmentEndOffset(t *testing.T) {
+func Test_getSegmentNewestOffset(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
@@ -59,12 +59,12 @@ func Test_getSegmentEndOffset(t *testing.T) {
 	offsets, err := getPartitionSegmentOffsets(cfg.Path, 01)
 	assert_noerror(t, err)
 
-	offset, err := getSegmentEndOffset(cfg.Path, 01, offsets[len(offsets)-1])
+	offset, err := getSegmentNewestOffset(cfg.Path, 01, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, 31, offset)
 }
 
-func Test_getSegmentEndOffset_empty(t *testing.T) {
+func Test_getSegmentNewestOffset_empty(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
@@ -80,12 +80,12 @@ func Test_getSegmentEndOffset_empty(t *testing.T) {
 	assert_noerror(t, err)
 	assert_noerror(t, f.Close())
 
-	offset, err := getSegmentEndOffset(cfg.Path, 01, 0)
+	offset, err := getSegmentNewestOffset(cfg.Path, 01, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 0, offset)
 }
 
-func Test_getSegmentEndTimestamp(t *testing.T) {
+func Test_getSegmentOldestTimestamp(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
@@ -141,9 +141,74 @@ func Test_getSegmentEndTimestamp(t *testing.T) {
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := getSegmentEndTimestamp(cfg.Path, 0, offsets[1])
+	endTimestamp, err := getSegmentOldestTimestamp(cfg.Path, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), endTimestamp)
+}
+
+func Test_getSegmentNewestTimestamp(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             testPath,
+		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
+	}
+
+	p, err := createPartition(cfg, 00)
+	assert_noerror(t, err)
+	assert_notnil(t, p)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 11, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	err = p.closeActiveSegmentUnsafe()
+	assert_noerror(t, err)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	err = p.closeActiveSegmentUnsafe()
+	assert_noerror(t, err)
+
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 14, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+	_, err = p.Write(Message{
+		TimestampUTC: time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	})
+	assert_noerror(t, err)
+
+	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 3, len(offsets))
+
+	endTimestamp, err := getSegmentNewestTimestamp(cfg.Path, 0, offsets[1])
+	assert_noerror(t, err)
+	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), endTimestamp)
+
+	endTimestamp, err = getSegmentNewestTimestamp(cfg.Path, 0, offsets[len(offsets)-1])
+	assert_noerror(t, err)
+	assert_equal(t, time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC), endTimestamp)
 }
 
 func readIndexEntries(r io.Reader) (output []segmentIndex) {
@@ -161,4 +226,33 @@ func messageSizeBytes(m Message) int64 {
 	data := new(bytes.Buffer)
 	_ = Encode(m, data)
 	return int64(data.Len())
+}
+
+func Test_getPartitionSizeBytes(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	m := Message{
+		PartitionKey: "aaa",
+		TimestampUTC: time.Date(2024, 01, 02, 12, 11, 10, 9, time.UTC),
+		Data:         []byte("test-data"),
+	}
+	messageSize := messageSizeBytes(m)
+
+	cfg := Config{
+		Path:             testPath,
+		SegmentSizeBytes: 3 * messageSize,
+	}
+
+	dq, err := New(cfg)
+	assert_noerror(t, err)
+
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+	_, _, _ = dq.Push(m)
+
+	sizeBytes, err := getPartitionSizeBytes(testPath, 0)
+	assert_noerror(t, err)
+	assert_equal(t, 4*messageSize, sizeBytes)
 }

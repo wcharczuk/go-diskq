@@ -82,32 +82,3 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	assert_equal(t, 3*messageSize, entries[3].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[3].GetSizeBytes())
 }
-
-func Test_Partition_getSizeBytes(t *testing.T) {
-	testPath, done := tempDir()
-	defer done()
-
-	m := Message{
-		PartitionKey: "aaa",
-		TimestampUTC: time.Date(2024, 01, 02, 12, 11, 10, 9, time.UTC),
-		Data:         []byte("test-data"),
-	}
-	messageSize := messageSizeBytes(m)
-
-	cfg := Config{
-		Path:             testPath,
-		SegmentSizeBytes: 3 * messageSize,
-	}
-
-	dq, err := New(cfg)
-	assert_noerror(t, err)
-
-	_, _, _ = dq.Push(m)
-	_, _, _ = dq.Push(m)
-	_, _, _ = dq.Push(m)
-	_, _, _ = dq.Push(m)
-
-	sizeBytes, err := dq.partitions[0].getSizeBytes()
-	assert_noerror(t, err)
-	assert_equal(t, 4*messageSize, sizeBytes)
-}

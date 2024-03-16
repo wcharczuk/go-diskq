@@ -24,7 +24,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		return nil, fmt.Errorf("diskq; consumer; cannot stat data path: %w", err)
 	}
 	var notify *fsnotify.Watcher
-	if options.EndBehavior != ConsumerEndAndClose {
+	if options.EndBehavior != ConsumerEndBehaviorClose {
 		notify, err = fsnotify.NewWatcher()
 		if err != nil {
 			return nil, err
@@ -56,10 +56,10 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 
 // ConsumerOptions are options that control how consumers behave.
 type ConsumerOptions struct {
-	StartAtBehavior ConsumerStartBehavior
-	StartAtOffset   uint64
-	EndBehavior     ConsumerEndBehavior
-	EndAtOffset     uint64
+	StartBehavior ConsumerStartBehavior
+	StartOffset   uint64
+	EndBehavior   ConsumerEndBehavior
+	EndOffset     uint64
 }
 
 // MessageWithOffset is a special wrapping type for messages
@@ -77,11 +77,44 @@ type ConsumerStartBehavior uint8
 
 // ConsumerStartAtBehavior values.
 const (
-	ConsumerStartAtBeginning ConsumerStartBehavior = iota
-	ConsumerStartAtOffset
-	ConsumerStartAtActiveSegmentStart
-	ConsumerStartAtActiveSegmentLatest
+	ConsumerStartBehaviorOldest ConsumerStartBehavior = iota
+	ConsumerStartBehaviorAtOffset
+	ConsumerStartBehaviorActiveSegmentOldest
+	ConsumerStartBehaviorNewest
 )
+
+// String returns a string form of the consumer start behavior.
+func (csb ConsumerStartBehavior) String() string {
+	switch csb {
+	case ConsumerStartBehaviorOldest:
+		return "oldest"
+	case ConsumerStartBehaviorAtOffset:
+		return "at-offset"
+	case ConsumerStartBehaviorActiveSegmentOldest:
+		return "active-oldest"
+	case ConsumerStartBehaviorNewest:
+		return "newest"
+	default:
+		return ""
+	}
+}
+
+// ParseConsumerStartBehavior parses a raw string as a consumer start behavior.
+func ParseConsumerStartBehavior(raw string) (startBehavior ConsumerStartBehavior, err error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "oldest":
+		startBehavior = ConsumerStartBehaviorOldest
+	case "at-offset":
+		startBehavior = ConsumerStartBehaviorAtOffset
+	case "active-oldest":
+		startBehavior = ConsumerStartBehaviorActiveSegmentOldest
+	case "newest":
+		startBehavior = ConsumerStartBehaviorNewest
+	default:
+		err = fmt.Errorf("absurd consumer start behavior: %s", raw)
+	}
+	return
+}
 
 // ConsumerEndBehavior controls how the consumer behaves when the
 // last offset is read in the active segment.
@@ -89,10 +122,39 @@ type ConsumerEndBehavior uint8
 
 // ConsumerEndBehavior values.
 const (
-	ConsumerEndAndWait ConsumerEndBehavior = iota
-	ConsumerEndAtOffset
-	ConsumerEndAndClose
+	ConsumerEndBehaviorWait ConsumerEndBehavior = iota
+	ConsumerEndBehaviorAtOffset
+	ConsumerEndBehaviorClose
 )
+
+// String returns a string form of the consumer end behavior.
+func (ceb ConsumerEndBehavior) String() string {
+	switch ceb {
+	case ConsumerEndBehaviorWait:
+		return "wait"
+	case ConsumerEndBehaviorAtOffset:
+		return "at-offset"
+	case ConsumerEndBehaviorClose:
+		return "close"
+	default:
+		return ""
+	}
+}
+
+// ParseConsumerEndBehavior parses a given raw string as a consumer end behavior.
+func ParseConsumerEndBehavior(raw string) (endBehavior ConsumerEndBehavior, err error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "wait":
+		endBehavior = ConsumerEndBehaviorWait
+	case "at-offset":
+		endBehavior = ConsumerEndBehaviorAtOffset
+	case "close":
+		endBehavior = ConsumerEndBehaviorClose
+	default:
+		err = fmt.Errorf("absurd consumer end behavior: %s", raw)
+	}
+	return
+}
 
 // Consumer handles reading messages from a given partition.
 //
@@ -237,7 +299,7 @@ func (c *Consumer) read() {
 		}:
 		}
 
-		if c.options.EndBehavior == ConsumerEndAtOffset && workingSegmentData.GetOffset() == c.options.EndAtOffset {
+		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && workingSegmentData.GetOffset() == c.options.EndOffset {
 			return
 		}
 
@@ -254,7 +316,7 @@ func (c *Consumer) read() {
 
 func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, err error) {
 	partitionPath := formatPathForPartition(c.path, c.partitionIndex)
-	if c.options.EndBehavior != ConsumerEndAndClose {
+	if c.options.EndBehavior != ConsumerEndBehaviorClose {
 		go c.listenForFilesystemEvents()
 	}
 
@@ -282,7 +344,7 @@ func (c *Consumer) initializeRead(workingSegmentData *segmentIndex) (ok bool, er
 		return
 	}
 
-	if c.options.EndBehavior != ConsumerEndAndClose {
+	if c.options.EndBehavior != ConsumerEndBehaviorClose {
 		err = c.notify.Add(partitionPath)
 		if err != nil {
 			return
@@ -454,7 +516,7 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 }
 
 func (c *Consumer) waitForNewOffset(workingSegmentData *segmentIndex) (ok bool, err error) {
-	if c.options.EndBehavior == ConsumerEndAndClose {
+	if c.options.EndBehavior == ConsumerEndBehaviorClose {
 		return
 	}
 
@@ -562,19 +624,19 @@ func (c *Consumer) error(err error) {
 }
 
 func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, error) {
-	switch c.options.StartAtBehavior {
-	case ConsumerStartAtOffset:
-		if c.options.StartAtOffset < offsets[0] {
-			return 0, fmt.Errorf("diskq; consume; invalid start at offset: %d", c.options.StartAtOffset)
+	switch c.options.StartBehavior {
+	case ConsumerStartBehaviorAtOffset:
+		if c.options.StartOffset < offsets[0] {
+			return 0, fmt.Errorf("diskq; consume; invalid start at offset: %d", c.options.StartOffset)
 		}
-		return c.options.StartAtOffset + 1, nil
-	case ConsumerStartAtBeginning:
+		return c.options.StartOffset + 1, nil
+	case ConsumerStartBehaviorOldest:
 		return offsets[0], nil
-	case ConsumerStartAtActiveSegmentStart:
+	case ConsumerStartBehaviorActiveSegmentOldest:
 		return offsets[len(offsets)-1], nil
-	case ConsumerStartAtActiveSegmentLatest:
-		return getSegmentEndOffset(c.path, c.partitionIndex, offsets[len(offsets)-1])
+	case ConsumerStartBehaviorNewest:
+		return getSegmentNewestOffset(c.path, c.partitionIndex, offsets[len(offsets)-1])
 	default:
-		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartAtBehavior)
+		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartBehavior)
 	}
 }

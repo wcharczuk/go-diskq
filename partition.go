@@ -2,7 +2,6 @@ package diskq
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"sync"
 	"time"
@@ -66,17 +65,6 @@ type Partition struct {
 	activeSegment *Segment
 }
 
-func (p *Partition) GetOffset(offset uint64) (m Message, ok bool, err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	startOffset, ok, err := p.getSegmentForOffsetUnsafe(offset)
-	if err != nil || !ok {
-		return
-	}
-	m, ok, err = getSegmentOffset(p.cfg.Path, p.index, startOffset, offset)
-	return
-}
-
 func (p *Partition) Write(message Message) (offset uint64, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -126,7 +114,7 @@ func (p *Partition) Vacuum() error {
 			}
 		}
 		if p.cfg.RetentionMaxBytes > 0 {
-			partitionSizeBytes, err := p.getSizeBytes()
+			partitionSizeBytes, err := getPartitionSizeBytes(p.cfg.Path, p.index)
 			if err != nil {
 				return err
 			}
@@ -154,16 +142,6 @@ func (p *Partition) Close() error {
 // internal
 //
 
-func (p *Partition) getSegmentForOffsetUnsafe(offset uint64) (startOffset uint64, ok bool, err error) {
-	var entries []uint64
-	entries, err = getPartitionSegmentOffsets(p.cfg.Path, p.index)
-	if err != nil {
-		return
-	}
-	startOffset, ok = getSegmentStartOffsetForOffset(entries, offset)
-	return
-}
-
 func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
 	return int64(segment.endOffsetBytes) > p.cfg.SegmentSizeBytesOrDefault()
 }
@@ -183,7 +161,7 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = getSegmentEndTimestamp(p.cfg.Path, p.index, startOffset)
+	endTimestamp, err = getSegmentOldestTimestamp(p.cfg.Path, p.index, startOffset)
 	if err != nil {
 		return
 	}
@@ -204,22 +182,4 @@ func (p *Partition) vacuumSegment(startOffset uint64) error {
 		return err
 	}
 	return nil
-}
-
-func (p *Partition) getSizeBytes() (sizeBytes int64, err error) {
-	var offsets []uint64
-	offsets, err = getPartitionSegmentOffsets(p.cfg.Path, p.index)
-	if err != nil {
-		return
-	}
-	var info fs.FileInfo
-	for _, offset := range offsets {
-		segmentRoot := formatPathForSegment(p.cfg.Path, p.index, offset)
-		info, err = os.Stat(segmentRoot + extData)
-		if err != nil {
-			return
-		}
-		sizeBytes += info.Size()
-	}
-	return
 }

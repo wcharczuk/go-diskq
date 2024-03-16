@@ -1,6 +1,7 @@
 package diskq
 
 import (
+	"encoding/binary"
 	"time"
 )
 
@@ -18,4 +19,4 @@ func (sti segmentTimeIndex) GetTimestampUTC() time.Time {
 	return time.Unix(0, int64(sti[1])).UTC()
 }
 
-// var segmentTimeIndexSize = binary.Size(segmentTimeIndex{})
+var segmentTimeIndexSize = binary.Size(segmentTimeIndex{})

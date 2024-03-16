@@ -13,9 +13,9 @@ import (
 
 var flagPath = flag.String("path", "", "The data path (if unset, a temporary dir will be created")
 var flagPartition = flag.Int("partition", 0, "The partition to consume")
-var flagStartBehavior = flag.String("start-behavior", "beginning", "The start behavior (one of 'beginning', 'at-offset', 'active-start', 'active-latest')")
+var flagStartBehavior = flag.String("start-behavior", diskq.ConsumerStartBehaviorOldest.String(), "The start behavior (one of 'beginning', 'at-offset', 'active-start', 'active-latest')")
 var flagStartAtOffset = flag.Int("start-at-offset", 0, "The offset to start reading from (if the start behavior is 'at offset')")
-var flagEndBehavior = flag.String("end-behavior", "wait", "The end behavior (one of 'wait', 'at-offset', 'close')")
+var flagEndBehavior = flag.String("end-behavior", diskq.ConsumerEndBehaviorClose.String(), "The end behavior (one of 'wait', 'at-offset', 'close')")
 var flagEndAtOffset = flag.Int("end-at-offset", 0, "The offset to end reading from (if the end behavior is 'at-offset')")
 var flagProcessingDelay = flag.Duration("processing-delay", 0, "The delay to inject into processing")
 
@@ -33,26 +33,16 @@ func main() {
 
 	fmt.Printf("using data path: %s\n", path)
 
-	var startBehavior = diskq.ConsumerStartAtBeginning
-	switch *flagStartBehavior {
-	case "beginning":
-		startBehavior = diskq.ConsumerStartAtBeginning
-	case "at-offset":
-		startBehavior = diskq.ConsumerStartAtOffset
-	case "active-start":
-		startBehavior = diskq.ConsumerStartAtActiveSegmentStart
-	case "active-latest":
-		startBehavior = diskq.ConsumerStartAtActiveSegmentLatest
+	startBehavior, err := diskq.ParseConsumerStartBehavior(*flagStartBehavior)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return
 	}
 
-	var endBehavior = diskq.ConsumerEndAndWait
-	switch *flagEndBehavior {
-	case "wait":
-		endBehavior = diskq.ConsumerEndAndWait
-	case "at-offset":
-		endBehavior = diskq.ConsumerEndAtOffset
-	case "close":
-		endBehavior = diskq.ConsumerEndAndClose
+	endBehavior, err := diskq.ParseConsumerEndBehavior(*flagEndBehavior)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return
 	}
 
 	marker, markerFound, err := diskq.NewOffsetMarker(filepath.Join(path, fmt.Sprintf("consumer-%03d", *flagPartition)), diskq.OffsetMarkerOptions{
@@ -65,15 +55,15 @@ func main() {
 	defer func() { _ = marker.Close() }()
 
 	consumerOptions := diskq.ConsumerOptions{
-		StartAtBehavior: startBehavior,
-		StartAtOffset:   uint64(*flagStartAtOffset),
-		EndBehavior:     endBehavior,
-		EndAtOffset:     uint64(*flagEndAtOffset),
+		StartBehavior: startBehavior,
+		StartOffset:   uint64(*flagStartAtOffset),
+		EndBehavior:   endBehavior,
+		EndOffset:     uint64(*flagEndAtOffset),
 	}
 	if markerFound {
 		fmt.Println("using existing marker offset:", marker.Latest())
-		consumerOptions.StartAtBehavior = diskq.ConsumerStartAtOffset
-		consumerOptions.StartAtOffset = marker.Latest()
+		consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
+		consumerOptions.StartOffset = marker.Latest()
 	}
 
 	consumer, err := diskq.OpenConsumer(path, uint32(*flagPartition), consumerOptions)

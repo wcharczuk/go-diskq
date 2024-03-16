@@ -47,7 +47,27 @@ func parseSegmentOffsetFromPath(path string) (uint64, error) {
 	return strconv.ParseUint(rawStartOffset, 10, 64)
 }
 
-func getSegmentEndTimestamp(path string, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
+func getSegmentNewestTimestamp(path string, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
+	var segment segmentTimeIndex
+	var f *os.File
+	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extTimeIndex)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	ts = segment.GetTimestampUTC()
+	return
+}
+
+func getSegmentOldestTimestamp(path string, partitionIndex uint32, startOffset uint64) (ts time.Time, err error) {
 	var segment segmentTimeIndex
 	var f *os.File
 	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extTimeIndex)
@@ -67,7 +87,7 @@ func getSegmentEndTimestamp(path string, partitionIndex uint32, startOffset uint
 	return
 }
 
-func getSegmentEndOffset(path string, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
+func getSegmentNewestOffset(path string, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
 	var segment segmentIndex
 	var f *os.File
 	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extIndex)
@@ -162,4 +182,22 @@ func getPartitionsLookup(path string) (map[uint32]struct{}, error) {
 		output[partitionIndex] = struct{}{}
 	}
 	return output, nil
+}
+
+func getPartitionSizeBytes(path string, partitionIndex uint32) (sizeBytes int64, err error) {
+	var offsets []uint64
+	offsets, err = getPartitionSegmentOffsets(path, partitionIndex)
+	if err != nil {
+		return
+	}
+	var info fs.FileInfo
+	for _, offset := range offsets {
+		segmentRoot := formatPathForSegment(path, partitionIndex, offset)
+		info, err = os.Stat(segmentRoot + extData)
+		if err != nil {
+			return
+		}
+		sizeBytes += info.Size()
+	}
+	return
 }

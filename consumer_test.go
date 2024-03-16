@@ -31,7 +31,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 	}
 
 	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
-		StartAtBehavior: ConsumerStartAtBeginning,
+		StartBehavior: ConsumerStartBehaviorOldest,
 	})
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
@@ -73,8 +73,8 @@ func Test_Consumer_startFromBeginning_endAtLatest(t *testing.T) {
 	}
 
 	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
-		StartAtBehavior: ConsumerStartAtBeginning,
-		EndBehavior:     ConsumerEndAndClose,
+		StartBehavior: ConsumerStartBehaviorOldest,
+		EndBehavior:   ConsumerEndBehaviorClose,
 	})
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
@@ -94,7 +94,71 @@ messageloop:
 				break messageloop
 			}
 			assert_noerror(t, err)
-		default:
+		}
+	}
+}
+
+func Test_ParseConsumerStartBehavior(t *testing.T) {
+	tests := [...]struct {
+		Raw       string
+		Expect    ConsumerStartBehavior
+		ExpectErr error
+	}{
+		{Raw: "", ExpectErr: fmt.Errorf("absurd consumer start behavior: %s", "")},
+		{Raw: "not-a-real-value", ExpectErr: fmt.Errorf("absurd consumer start behavior: %s", "not-a-real-value")},
+		{Raw: "oldest", Expect: ConsumerStartBehaviorOldest},
+		{Raw: "OLDEST", Expect: ConsumerStartBehaviorOldest},
+		{Raw: "  oldest  ", Expect: ConsumerStartBehaviorOldest},
+		{Raw: "  OLDEST  ", Expect: ConsumerStartBehaviorOldest},
+		{Raw: "at-offset", Expect: ConsumerStartBehaviorAtOffset},
+		{Raw: "active-oldest", Expect: ConsumerStartBehaviorActiveSegmentOldest},
+		{Raw: "newest", Expect: ConsumerStartBehaviorNewest},
+
+		{Raw: ConsumerStartBehaviorOldest.String(), Expect: ConsumerStartBehaviorOldest},
+		{Raw: ConsumerStartBehaviorAtOffset.String(), Expect: ConsumerStartBehaviorAtOffset},
+		{Raw: ConsumerStartBehaviorActiveSegmentOldest.String(), Expect: ConsumerStartBehaviorActiveSegmentOldest},
+		{Raw: ConsumerStartBehaviorNewest.String(), Expect: ConsumerStartBehaviorNewest},
+	}
+
+	for _, tc := range tests {
+		actual, actualErr := ParseConsumerStartBehavior(tc.Raw)
+		if tc.ExpectErr != nil {
+			assert_notnil(t, actualErr)
+			assert_equal(t, tc.ExpectErr.Error(), actualErr.Error())
+		} else {
+			assert_equal(t, tc.Expect, actual)
+		}
+	}
+}
+
+func Test_ParseConsumerEndBehavior(t *testing.T) {
+	tests := [...]struct {
+		Raw       string
+		Expect    ConsumerEndBehavior
+		ExpectErr error
+	}{
+		{Raw: "", ExpectErr: fmt.Errorf("absurd consumer end behavior: %s", "")},
+		{Raw: "not-a-real-value", ExpectErr: fmt.Errorf("absurd consumer end behavior: %s", "not-a-real-value")},
+		{Raw: "wait", Expect: ConsumerEndBehaviorWait},
+		{Raw: "  wait  ", Expect: ConsumerEndBehaviorWait},
+		{Raw: "WAIT", Expect: ConsumerEndBehaviorWait},
+		{Raw: "  WAIT  ", Expect: ConsumerEndBehaviorWait},
+
+		{Raw: "at-offset", Expect: ConsumerEndBehaviorAtOffset},
+		{Raw: "close", Expect: ConsumerEndBehaviorClose},
+
+		{Raw: ConsumerEndBehaviorWait.String(), Expect: ConsumerEndBehaviorWait},
+		{Raw: ConsumerEndBehaviorAtOffset.String(), Expect: ConsumerEndBehaviorAtOffset},
+		{Raw: ConsumerEndBehaviorClose.String(), Expect: ConsumerEndBehaviorClose},
+	}
+
+	for _, tc := range tests {
+		actual, actualErr := ParseConsumerEndBehavior(tc.Raw)
+		if tc.ExpectErr != nil {
+			assert_notnil(t, actualErr)
+			assert_equal(t, tc.ExpectErr.Error(), actualErr.Error())
+		} else {
+			assert_equal(t, tc.Expect, actual)
 		}
 	}
 }

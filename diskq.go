@@ -69,15 +69,6 @@ func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error
 	return
 }
 
-// GetOffset finds and decodes a message by offset in a given partition and returns it.
-func (dq *Diskq) GetOffset(partitionIndex uint32, offset uint64) (v Message, ok bool, err error) {
-	if partitionIndex >= uint32(len(dq.partitions)) {
-		return
-	}
-	v, ok, err = dq.partitions[partitionIndex].GetOffset(offset)
-	return
-}
-
 // Vacuum deletes old segments from all partitions
 // if retention is configured.
 func (dq *Diskq) Vacuum() (err error) {
@@ -125,8 +116,12 @@ func (dq *Diskq) Close() error {
 // internal methods
 //
 
+func formatPathForSentinel(path string) string {
+	return filepath.Join(path, "owner")
+}
+
 func (dq *Diskq) writeSentinel() error {
-	sentinelPath := filepath.Join(dq.cfg.Path, "owner")
+	sentinelPath := formatPathForSentinel(dq.cfg.Path)
 	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return err
@@ -138,7 +133,8 @@ func (dq *Diskq) writeSentinel() error {
 }
 
 func (dq *Diskq) releaseSentinel() error {
-	return os.Remove(filepath.Join(dq.cfg.Path, "owner"))
+	sentinelPath := formatPathForSentinel(dq.cfg.Path)
+	return os.Remove(sentinelPath)
 }
 
 func maybeSync(wr io.Writer) error {

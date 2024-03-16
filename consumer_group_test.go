@@ -29,8 +29,8 @@ func Test_ConsumerGroup_readToEnd(t *testing.T) {
 	}
 
 	cg, err := OpenConsumerGroup(testPath, ConsumerGroupOptions(ConsumerOptions{
-		StartAtBehavior: ConsumerStartAtBeginning,
-		EndBehavior:     ConsumerEndAndClose,
+		StartBehavior: ConsumerStartBehaviorOldest,
+		EndBehavior:   ConsumerEndBehaviorClose,
 	}))
 	assert_noerror(t, err)
 	defer func() { _ = cg.Close() }()
