@@ -54,11 +54,11 @@ func NewOffsetMarker(path string, options OffsetMarkerOptions) (OffsetMarker, bo
 type OffsetMarker interface {
 	io.Closer
 
-	// Latest returns the last offset seen as passed to `Record`.
-	Latest() uint64
+	// Offset returns the last offset seen as passed to `Record`.
+	Offset() uint64
 
-	// Record adds a new latest offset to the offset marker.
-	Record(uint64)
+	// AddOffset adds a new latest offset to the offset marker.
+	AddOffset(uint64)
 
 	// Sync writes the latest offset to disk.
 	Sync() error
@@ -94,11 +94,11 @@ type offsetMarker struct {
 	exited       chan struct{}
 }
 
-func (om *offsetMarker) Latest() uint64 {
+func (om *offsetMarker) Offset() uint64 {
 	return atomic.LoadUint64(&om.latestOffset)
 }
 
-func (om *offsetMarker) Record(offset uint64) {
+func (om *offsetMarker) AddOffset(offset uint64) {
 	atomic.StoreUint64(&om.latestOffset, offset)
 	if om.options.AutosyncEveryOffset > 0 {
 		if atomic.AddUint64(&om.offsetSeen, 1) >= om.options.AutosyncEveryOffset {

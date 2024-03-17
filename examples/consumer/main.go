@@ -61,9 +61,9 @@ func main() {
 		EndOffset:     uint64(*flagEndAtOffset),
 	}
 	if markerFound {
-		fmt.Println("using existing marker offset:", marker.Latest())
+		fmt.Println("using existing marker offset:", marker.Offset())
 		consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
-		consumerOptions.StartOffset = marker.Latest()
+		consumerOptions.StartOffset = marker.Offset()
 	}
 
 	consumer, err := diskq.OpenConsumer(path, uint32(*flagPartition), consumerOptions)
@@ -86,7 +86,7 @@ func main() {
 			if *flagProcessingDelay > 0 {
 				time.Sleep(*flagProcessingDelay)
 			}
-			marker.Record(msg.Offset)
+			marker.AddOffset(msg.Offset)
 			fmt.Printf("<- consumer %d finished processing %v\n", *flagPartition, msg.Offset)
 		}
 	}()

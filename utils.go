@@ -32,7 +32,7 @@ func FormatPathForPartitions(path string) string {
 func FormatPathForPartition(path string, partitionIndex uint32) string {
 	return filepath.Join(
 		FormatPathForPartitions(path),
-		formatPartitionIndexForPath(partitionIndex),
+		FormatPartitionIndexForPath(partitionIndex),
 	)
 }
 
@@ -44,7 +44,8 @@ func FormatPathForSegment(path string, partitionIndex uint32, startOffset uint64
 	)
 }
 
-func formatPartitionIndexForPath(partitionIndex uint32) string {
+// FormatPartitionIndexForPath returns a partition index as a string.
+func FormatPartitionIndexForPath(partitionIndex uint32) string {
 	return fmt.Sprintf("%06d", partitionIndex)
 }
 

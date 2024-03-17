@@ -7,7 +7,7 @@ import (
 )
 
 // OpenConsumerGropu opens a new consumer group.
-func OpenConsumerGroup(path string, options func(uint32) ConsumerOptions) (*ConsumerGroup, error) {
+func OpenConsumerGroup(path string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	cg := &ConsumerGroup{
 		path:          path,
 		options:       options,
@@ -23,10 +23,18 @@ func OpenConsumerGroup(path string, options func(uint32) ConsumerOptions) (*Cons
 	return cg, nil
 }
 
-// ConsumerGroupOptions returns a given set of consumer options for any
-// consumers created for a consumer group.
-func ConsumerGroupOptions(opts ConsumerOptions) func(uint32) ConsumerOptions {
-	return func(_ uint32) ConsumerOptions { return opts }
+// ConsumerGroupOptions are extra options for consumer groups.
+type ConsumerGroupOptions struct {
+	OnCreateConsumer func(uint32) (ConsumerOptions, error)
+	OnCloseConsumer  func(uint32) error
+}
+
+// ConsumerGroupOptionsFromConsumerOptions returns consumer group options where for each partition
+// a given set of consumer options is returned when a new partition consumer is created.
+func ConsumerGroupOptionsFromConsumerOptions(consumerOptions ConsumerOptions) ConsumerGroupOptions {
+	return ConsumerGroupOptions{
+		OnCreateConsumer: func(_ uint32) (ConsumerOptions, error) { return consumerOptions, nil },
+	}
 }
 
 // ConsumerGroup is a consumer that reads from all partitions at once, and periodically
@@ -35,16 +43,15 @@ func ConsumerGroupOptions(opts ConsumerOptions) func(uint32) ConsumerOptions {
 // Partitions are read from their start offset by default, and you can only control
 // the end behavior in practice.
 type ConsumerGroup struct {
-	mu            sync.Mutex
-	path          string
-	options       func(uint32) ConsumerOptions
-	consumers     map[uint32]*Consumer
-	consumerExits chan struct{}
-	messages      chan MessageWithOffset
-	errors        chan error
-	didStart      chan struct{}
-	done          chan struct{}
-
+	mu              sync.Mutex
+	path            string
+	options         ConsumerGroupOptions
+	consumers       map[uint32]*Consumer
+	consumerExits   chan struct{}
+	messages        chan MessageWithOffset
+	errors          chan error
+	didStart        chan struct{}
+	done            chan struct{}
 	activeConsumers int32
 }
 
@@ -81,6 +88,7 @@ func (cg *ConsumerGroup) Close() error {
 	close(cg.done)
 	cg.done = nil
 	for _, consumer := range cg.consumers {
+		_ = cg.onCloseConsumer(consumer.partitionIndex)
 		_ = consumer.Close()
 	}
 	close(cg.messages)
@@ -130,11 +138,18 @@ func (cg *ConsumerGroup) start() {
 	}
 }
 
-func (cg *ConsumerGroup) consumerOptionsForPartition(partitionIndex uint32) ConsumerOptions {
-	if cg.options != nil {
-		return cg.options(partitionIndex)
+func (cg *ConsumerGroup) onCreateConsumer(partitionIndex uint32) (ConsumerOptions, error) {
+	if cg.options.OnCreateConsumer != nil {
+		return cg.options.OnCreateConsumer(partitionIndex)
 	}
-	return ConsumerOptions{}
+	return ConsumerOptions{}, nil
+}
+
+func (cg *ConsumerGroup) onCloseConsumer(partitionIndex uint32) error {
+	if cg.options.OnCloseConsumer != nil {
+		return cg.options.OnCloseConsumer(partitionIndex)
+	}
+	return nil
 }
 
 func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
@@ -146,7 +161,13 @@ func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
 	}
 	for partitionIndex := range partitions {
 		if _, hasConsumer := cg.consumers[partitionIndex]; !hasConsumer {
-			consumer, err := OpenConsumer(cg.path, partitionIndex, cg.consumerOptionsForPartition(partitionIndex))
+			consumerOptions, err := cg.onCreateConsumer(partitionIndex)
+			if err != nil {
+				if ok = cg.error(err); !ok {
+					return
+				}
+			}
+			consumer, err := OpenConsumer(cg.path, partitionIndex, consumerOptions)
 			if err != nil {
 				if ok = cg.error(err); !ok {
 					return
@@ -167,6 +188,11 @@ func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
 		}
 	}
 	for _, id := range toRemove {
+		if err := cg.onCloseConsumer(id); err != nil {
+			if ok = cg.error(err); !ok {
+				return
+			}
+		}
 		atomic.AddInt32(&cg.activeConsumers, -1)
 		delete(cg.consumers, id)
 	}

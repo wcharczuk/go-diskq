@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -17,6 +20,11 @@ var globalFlags = []cli.Flag{
 		Name:     "path",
 		Usage:    "The path to the stream data",
 		Required: true,
+	},
+	&cli.BoolFlag{
+		Name:     "debug",
+		Usage:    "If debug output should be shown",
+		Required: false,
 	},
 }
 
@@ -33,6 +41,12 @@ func main() {
 	}
 	if err := root.Run(context.Background(), os.Args); err != nil {
 		maybeFatal(err)
+	}
+}
+
+func debugf(cmd *cli.Command, format string, args ...any) {
+	if cmd.Bool("debug") {
+		slog.Info(format, args...)
 	}
 }
 
@@ -155,6 +169,17 @@ func commandRead() *cli.Command {
 					diskq.ConsumerEndBehaviorAtOffset.String(),
 				),
 			},
+			&cli.StringFlag{
+				Name:    "offset-marker-path",
+				Aliases: []string{"omp"},
+				Value:   "",
+				Usage:   "A directory to hold offset markers for consumers to enable resuming work.",
+			},
+			&cli.DurationFlag{
+				Name:  "offset-marker-interval",
+				Value: 5 * time.Second,
+				Usage: "The interval to automatically flush offset marker offsets.",
+			},
 		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			startBehavior, err := diskq.ParseConsumerStartBehavior(cmd.String("start"))
@@ -166,17 +191,36 @@ func commandRead() *cli.Command {
 				return err
 			}
 
-			consumerOptions := diskq.ConsumerOptions{
-				StartBehavior: startBehavior,
-				StartOffset:   cmd.Uint("start-offset"),
-				EndBehavior:   endBehavior,
-				EndOffset:     cmd.Uint("end-offset"),
-			}
-
 			flagPath := cmd.String("path")
 			flagPartition := cmd.Int("partition")
 
 			if flagPartition >= 0 {
+				consumerOptions := diskq.ConsumerOptions{
+					StartBehavior: startBehavior,
+					StartOffset:   cmd.Uint("start-offset"),
+					EndBehavior:   endBehavior,
+					EndOffset:     cmd.Uint("end-offset"),
+				}
+				offsetMarkerPath := cmd.String("offset-marker-path")
+				var om diskq.OffsetMarker
+				var found bool
+				if offsetMarkerPath != "" {
+					om, found, err = diskq.NewOffsetMarker(offsetMarkerPath, diskq.OffsetMarkerOptions{
+						AutosyncInterval: cmd.Duration("offset-marker-interval"),
+					})
+					if err != nil {
+						return err
+					}
+					defer om.Close()
+					if found {
+						debugf(cmd, "diskq; resuming at offset", "partition", flagPartition, "offset", om.Offset())
+						consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
+						consumerOptions.StartOffset = om.Offset()
+					} else {
+						debugf(cmd, "diskq; skipping resuming at offset", "partition", flagPartition)
+					}
+				}
+
 				consumer, err := diskq.OpenConsumer(flagPath, uint32(flagPartition), consumerOptions)
 				if err != nil {
 					return err
@@ -187,6 +231,9 @@ func commandRead() *cli.Command {
 						msg, ok := <-consumer.Messages()
 						if !ok {
 							return
+						}
+						if om != nil {
+							om.AddOffset(msg.Offset)
 						}
 						fmt.Println(string(msg.Data))
 					}
@@ -205,7 +252,63 @@ func commandRead() *cli.Command {
 				}
 			}
 
-			consumerGroup, err := diskq.OpenConsumerGroup(flagPath, func(_ uint32) diskq.ConsumerOptions { return consumerOptions })
+			var consumerGroupOptions diskq.ConsumerGroupOptions
+			offsetMarkerPath := cmd.String("offset-marker-path")
+			var offsetMarkersMu sync.Mutex
+			offsetMarkers := make(map[uint32]diskq.OffsetMarker)
+			if offsetMarkerPath != "" {
+				if err := os.MkdirAll(offsetMarkerPath, 0755); err != nil {
+					return err
+				}
+				consumerGroupOptions.OnCreateConsumer = func(partitionIndex uint32) (diskq.ConsumerOptions, error) {
+					path := filepath.Join(offsetMarkerPath, diskq.FormatPartitionIndexForPath(partitionIndex))
+					om, found, err := diskq.NewOffsetMarker(path, diskq.OffsetMarkerOptions{
+						AutosyncInterval: cmd.Duration("offset-marker-interval"),
+					})
+					if err != nil {
+						return diskq.ConsumerOptions{}, err
+					}
+					offsetMarkersMu.Lock()
+					offsetMarkers[partitionIndex] = om
+					offsetMarkersMu.Unlock()
+					consumerOptions := diskq.ConsumerOptions{
+						StartBehavior: startBehavior,
+						StartOffset:   cmd.Uint("start-offset"),
+						EndBehavior:   endBehavior,
+						EndOffset:     cmd.Uint("end-offset"),
+					}
+					if found {
+						debugf(cmd, "diskq; resuming at offset", "partition", partitionIndex, "offset", om.Offset())
+						consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
+						consumerOptions.StartOffset = om.Offset()
+					} else {
+						debugf(cmd, "diskq; skipping resuming at offset", "partition", partitionIndex)
+					}
+					return consumerOptions, nil
+				}
+				consumerGroupOptions.OnCloseConsumer = func(partitionIndex uint32) error {
+					offsetMarkersMu.Lock()
+					defer offsetMarkersMu.Unlock()
+					if om, ok := offsetMarkers[partitionIndex]; ok {
+						debugf(cmd, "diskq; closing offset marker", "partition", partitionIndex, "offset", om.Offset())
+						if err := om.Close(); ok {
+							return err
+						}
+						delete(offsetMarkers, partitionIndex)
+					}
+					return nil
+				}
+			} else {
+				debugf(cmd, "diskq; starting consumer group with static consumer options")
+				consumerGroupOptions = diskq.ConsumerGroupOptionsFromConsumerOptions(diskq.ConsumerOptions{
+					StartBehavior: startBehavior,
+					StartOffset:   cmd.Uint("start-offset"),
+					EndBehavior:   endBehavior,
+					EndOffset:     cmd.Uint("end-offset"),
+				})
+			}
+
+			consumerGroup, err := diskq.OpenConsumerGroup(flagPath, consumerGroupOptions)
 			if err != nil {
 				return err
 			}
@@ -218,6 +321,11 @@ func commandRead() *cli.Command {
 					if !ok {
 						return
 					}
+					if offsetMarkerPath != "" {
+						offsetMarkersMu.Lock()
+						offsetMarkers[msg.PartitionIndex].AddOffset(msg.Offset)
+						offsetMarkersMu.Unlock()
+					}
 					fmt.Println(string(msg.Data))
 				}
 			}()
@@ -225,6 +333,7 @@ func commandRead() *cli.Command {
 			signal.Notify(shutdown, os.Interrupt)
 			select {
 			case <-shutdown:
+				debugf(cmd, "diskq; shutting down")
 				signal.Reset(os.Interrupt)
 				return nil
 			case err, ok := <-consumerGroup.Errors():
@@ -235,7 +344,6 @@ func commandRead() *cli.Command {
 			}
 		},
 	}
-
 }
 
 func maybeFatal(err error) {
