@@ -20,7 +20,7 @@ import (
 // Messages will be read in rotating order through the partitions, that is
 // each partition will read one message at a time, repeating until they're all done reading.
 func Read(path string, fn func(MessageWithOffset) error) error {
-	partitionIndexes, err := getPartitions(path)
+	partitionIndexes, err := GetPartitions(path)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func Read(path string, fn func(MessageWithOffset) error) error {
 }
 
 func newReadPartitionIterator(path string, partitionIndex uint32) (*readPartitionIterator, error) {
-	segments, err := getPartitionSegmentOffsets(path, partitionIndex)
+	segments, err := GetPartitionSegmentStartOffsets(path, partitionIndex)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; read; cannot get partition segment offsets: %w", err)
 	}
@@ -56,11 +56,11 @@ func newReadPartitionIterator(path string, partitionIndex uint32) (*readPartitio
 		return nil, fmt.Errorf("diskq; read; no partition segment offsets returned")
 	}
 	firstSegment := segments[0]
-	indexHandle, err := openSegmentFileForRead(path, partitionIndex, firstSegment, extIndex)
+	indexHandle, err := OpenSegmentFileForRead(path, partitionIndex, firstSegment, ExtIndex)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; read; cannot open index file for segment: %w", err)
 	}
-	dataHandle, err := openSegmentFileForRead(path, partitionIndex, firstSegment, extData)
+	dataHandle, err := OpenSegmentFileForRead(path, partitionIndex, firstSegment, ExtData)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; read; cannot open data file for segment: %w", err)
 	}
@@ -84,7 +84,7 @@ type readPartitionIterator struct {
 	indexHandle *os.File
 	dataHandle  *os.File
 
-	workingSegmentData segmentIndex
+	workingSegmentData SegmentIndex
 	messageData        []byte
 }
 
@@ -155,12 +155,12 @@ func (rpi *readPartitionIterator) advanceToNextSegment() (done bool, err error) 
 	}
 	rpi.segmentIndex++
 	nextSegment := rpi.segments[rpi.segmentIndex]
-	rpi.indexHandle, err = openSegmentFileForRead(rpi.path, rpi.partitionIndex, nextSegment, extIndex)
+	rpi.indexHandle, err = OpenSegmentFileForRead(rpi.path, rpi.partitionIndex, nextSegment, ExtIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; read; cannot open index file for segment: %w", err)
 		return
 	}
-	rpi.dataHandle, err = openSegmentFileForRead(rpi.path, rpi.partitionIndex, nextSegment, extData)
+	rpi.dataHandle, err = OpenSegmentFileForRead(rpi.path, rpi.partitionIndex, nextSegment, ExtData)
 	if err != nil {
 		err = fmt.Errorf("diskq; read; cannot open data file for segment: %w", err)
 		return

@@ -8,7 +8,7 @@ import (
 )
 
 func NewPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
+	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
 	if _, err := os.Stat(intendedPath); err != nil {
 		return createPartition(cfg, partitionIndex)
 	}
@@ -16,7 +16,7 @@ func NewPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 }
 
 func createPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
+	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
 	if err := os.MkdirAll(intendedPath, 0755); err != nil {
 		return nil, fmt.Errorf("diskq; create partition; cannot create intended path: %w", err)
 	}
@@ -33,7 +33,7 @@ func createPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 }
 
 func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := formatPathForPartition(cfg.Path, partitionIndex)
+	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
 	dirEntries, err := os.ReadDir(intendedPath)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; open partition; cannot read intended path: %w", err)
@@ -90,7 +90,7 @@ func (p *Partition) Vacuum() error {
 		return nil
 	}
 
-	segmentOffsets, err := getPartitionSegmentOffsets(p.cfg.Path, p.index)
+	segmentOffsets, err := GetPartitionSegmentStartOffsets(p.cfg.Path, p.index)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (p *Partition) Vacuum() error {
 			}
 		}
 		if p.cfg.RetentionMaxBytes > 0 {
-			partitionSizeBytes, err := getPartitionSizeBytes(p.cfg.Path, p.index)
+			partitionSizeBytes, err := GetPartitionSizeBytes(p.cfg.Path, p.index)
 			if err != nil {
 				return err
 			}
@@ -161,7 +161,7 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = getSegmentOldestTimestamp(p.cfg.Path, p.index, startOffset)
+	endTimestamp, err = GetSegmentOldestTimestamp(p.cfg.Path, p.index, startOffset)
 	if err != nil {
 		return
 	}
@@ -171,14 +171,14 @@ func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegmen
 }
 
 func (p *Partition) vacuumSegment(startOffset uint64) error {
-	segmentRoot := formatPathForSegment(p.cfg.Path, p.index, startOffset)
-	if err := os.Remove(segmentRoot + extData); err != nil {
+	segmentRoot := FormatPathForSegment(p.cfg.Path, p.index, startOffset)
+	if err := os.Remove(segmentRoot + ExtData); err != nil {
 		return err
 	}
-	if err := os.Remove(segmentRoot + extIndex); err != nil {
+	if err := os.Remove(segmentRoot + ExtIndex); err != nil {
 		return err
 	}
-	if err := os.Remove(segmentRoot + extTimeIndex); err != nil {
+	if err := os.Remove(segmentRoot + ExtTimeIndex); err != nil {
 		return err
 	}
 	return nil

@@ -12,7 +12,7 @@ func Test_Segment_CreateSegment(t *testing.T) {
 	tempPath, done := tempDir()
 	defer done()
 
-	err := os.MkdirAll(formatPathForPartition(tempPath, 0), 0755)
+	err := os.MkdirAll(FormatPathForPartition(tempPath, 0), 0755)
 	assert_noerror(t, err)
 
 	segment, err := CreateSegment(tempPath, 0, 123)
@@ -66,14 +66,14 @@ func Test_Segment_writeUnsafe(t *testing.T) {
 	index := indexBuf.Bytes()
 	timeindex := timeindexBuf.Bytes()
 
-	var si segmentIndex
+	var si SegmentIndex
 	err = binary.Read(bytes.NewReader(index), binary.LittleEndian, &si)
 	assert_noerror(t, err)
 	assert_equal(t, si.GetOffset(), 0)
 	assert_equal(t, si.GetOffsetBytes(), 0)
 	assert_equal(t, si.GetSizeBytes(), 53)
 
-	var sti segmentTimeIndex
+	var sti SegmentTimeIndex
 	err = binary.Read(bytes.NewReader(timeindex), binary.LittleEndian, &sti)
 	assert_noerror(t, err)
 	assert_equal(t, si.GetOffset(), 0)

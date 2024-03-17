@@ -12,10 +12,10 @@ func GetOffset(path string, partitionIndex uint32, offset uint64) (m Message, ok
 
 func getPartitionSegmentForOffsetUnsafe(path string, partitionIndex uint32, offset uint64) (startOffset uint64, ok bool, err error) {
 	var entries []uint64
-	entries, err = getPartitionSegmentOffsets(path, partitionIndex)
+	entries, err = GetPartitionSegmentStartOffsets(path, partitionIndex)
 	if err != nil {
 		return
 	}
-	startOffset, ok = getSegmentStartOffsetForOffset(entries, offset)
+	startOffset, ok = GetSegmentStartOffsetForOffset(entries, offset)
 	return
 }

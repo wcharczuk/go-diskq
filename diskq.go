@@ -116,7 +116,7 @@ func (dq *Diskq) Close() error {
 //
 
 func (dq *Diskq) writeSentinel() error {
-	sentinelPath := formatPathForSentinel(dq.cfg.Path)
+	sentinelPath := FormatPathForSentinel(dq.cfg.Path)
 	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return fmt.Errorf("diskq; cannot open stream in exclusive mode: %w", err)
@@ -130,7 +130,7 @@ func (dq *Diskq) writeSentinel() error {
 }
 
 func (dq *Diskq) releaseSentinel() error {
-	sentinelPath := formatPathForSentinel(dq.cfg.Path)
+	sentinelPath := FormatPathForSentinel(dq.cfg.Path)
 	return os.Remove(sentinelPath)
 }
 

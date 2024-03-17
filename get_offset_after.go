@@ -17,7 +17,7 @@ import (
 // until the correct offset is found.
 func GetOffsetAfter(path string, partitionIndex uint32, after time.Time) (offset uint64, found bool, err error) {
 	var segments []uint64
-	segments, err = getPartitionSegmentOffsets(path, partitionIndex)
+	segments, err = GetPartitionSegmentStartOffsets(path, partitionIndex)
 	if err != nil {
 		return
 	}
@@ -26,7 +26,7 @@ func GetOffsetAfter(path string, partitionIndex uint32, after time.Time) (offset
 	var newest time.Time
 	for x := 0; x < len(segments); x++ {
 		targetSegmentStartOffset = segments[x]
-		newest, err = getSegmentNewestTimestamp(path, partitionIndex, targetSegmentStartOffset)
+		newest, err = GetSegmentNewestTimestamp(path, partitionIndex, targetSegmentStartOffset)
 		if err != nil {
 			return
 		}
@@ -40,21 +40,21 @@ func GetOffsetAfter(path string, partitionIndex uint32, after time.Time) (offset
 	}
 
 	var segmentTimeIndexHandle *os.File
-	segmentTimeIndexHandle, err = openSegmentFileForRead(path, partitionIndex, targetSegmentStartOffset, extTimeIndex)
+	segmentTimeIndexHandle, err = OpenSegmentFileForRead(path, partitionIndex, targetSegmentStartOffset, ExtTimeIndex)
 	if err != nil {
 		return
 	}
 	defer func() { _ = segmentTimeIndexHandle.Close() }()
 
-	oldestOffset, newestOffset, err := getSegmentNewestOldestOffsetFromTimeIndexHandle(segmentTimeIndexHandle)
+	oldestOffset, newestOffset, err := GetSegmentNewestOldestOffsetFromTimeIndexHandle(segmentTimeIndexHandle)
 	if err != nil {
 		return
 	}
 	offsets := newestOffset - oldestOffset
 
-	var searchTimeIndex segmentTimeIndex
+	var searchTimeIndex SegmentTimeIndex
 	offset, err = searchOffsets(offsets, func(relativeOffset uint64) (bool, error) {
-		seekBytes := int64(relativeOffset) * int64(segmentTimeIndexSize)
+		seekBytes := int64(relativeOffset) * int64(SegmentTimeIndexSizeBytes)
 		_, searchErr := segmentTimeIndexHandle.Seek(seekBytes, io.SeekStart)
 		if searchErr != nil {
 			return false, searchErr

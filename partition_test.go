@@ -42,7 +42,7 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 
 	// now we need to tear apart the individual partition files
 
-	index00, err := os.ReadFile(formatPathForSegment(cfg.Path, uint32(expectPartitionKey), 0) + extIndex)
+	index00, err := os.ReadFile(FormatPathForSegment(cfg.Path, uint32(expectPartitionKey), 0) + ExtIndex)
 	assert_noerror(t, err)
 
 	entries := readIndexEntries(bytes.NewReader(index00))
@@ -62,7 +62,7 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	assert_equal(t, 3*messageSize, entries[3].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[3].GetSizeBytes())
 
-	index01, err := os.ReadFile(formatPathForSegment(cfg.Path, uint32(expectPartitionKey), 4) + extIndex)
+	index01, err := os.ReadFile(FormatPathForSegment(cfg.Path, uint32(expectPartitionKey), 4) + ExtIndex)
 	assert_noerror(t, err)
 
 	entries = readIndexEntries(bytes.NewReader(index01))

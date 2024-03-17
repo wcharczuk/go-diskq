@@ -12,16 +12,16 @@ import (
 // CreateSegment creates a segment file at a given data path, for a given partition, and for
 // a given start offset which will be the effective filename.
 func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
-	intendedPathWithoutExtension := formatPathForSegment(path, partitionIndex, startOffset)
-	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_CREATE, 0644)
+	intendedPathWithoutExtension := FormatPathForSegment(path, partitionIndex, startOffset)
+	data, err := os.OpenFile(intendedPathWithoutExtension+ExtData, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
-	index, err := os.OpenFile(intendedPathWithoutExtension+extIndex, os.O_RDWR|os.O_CREATE, 0644)
+	index, err := os.OpenFile(intendedPathWithoutExtension+ExtIndex, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
-	timeindex, err := os.OpenFile(intendedPathWithoutExtension+extTimeIndex, os.O_RDWR|os.O_CREATE, 0644)
+	timeindex, err := os.OpenFile(intendedPathWithoutExtension+ExtTimeIndex, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -37,16 +37,16 @@ func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Seg
 }
 
 func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
-	intendedPathWithoutExtension := formatPathForSegment(path, partitionIndex, startOffset)
-	data, err := os.OpenFile(intendedPathWithoutExtension+extData, os.O_RDWR|os.O_APPEND, 0644)
+	intendedPathWithoutExtension := FormatPathForSegment(path, partitionIndex, startOffset)
+	data, err := os.OpenFile(intendedPathWithoutExtension+ExtData, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
-	index, err := os.OpenFile(intendedPathWithoutExtension+extIndex, os.O_RDWR|os.O_APPEND, 0644)
+	index, err := os.OpenFile(intendedPathWithoutExtension+ExtIndex, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
-	timeindex, err := os.OpenFile(intendedPathWithoutExtension+extTimeIndex, os.O_RDWR|os.O_APPEND, 0644)
+	timeindex, err := os.OpenFile(intendedPathWithoutExtension+ExtTimeIndex, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 		return nil, err
 	}
 
-	endOffset := startOffset + uint64(endIndexBytes/int64(binary.Size(segmentIndex{})))
+	endOffset := startOffset + uint64(endIndexBytes/int64(binary.Size(SegmentIndex{})))
 	return &Segment{
 		data:                     data,
 		index:                    index,
@@ -75,12 +75,6 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 		encodeBuffer:             new(bytes.Buffer),
 	}, nil
 }
-
-const (
-	extData      = ".data"
-	extIndex     = ".index"
-	extTimeIndex = ".timeindex"
-)
 
 type Segment struct {
 	startOffset    uint64
@@ -115,7 +109,7 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 
 	// NOTE (wc):
 	//	timeindex writes aren't listened for, so we can just bombs away on them.
-	if err = binary.Write(s.timeindex, binary.LittleEndian, newSegmentTimeIndex(s.endOffset, message.TimestampUTC)); err != nil {
+	if err = binary.Write(s.timeindex, binary.LittleEndian, NewSegmentTimeIndex(s.endOffset, message.TimestampUTC)); err != nil {
 		return
 	}
 
@@ -130,7 +124,7 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	// 	an eager consumer will pick up file write notifications on (1/3) or (2/3) of the segment elements being written one at a time
 	//	because binary write is careful to not buffer writes (like we specifically need to.)
 	s.segmentIndexEncodeBuffer.Reset()
-	if err = binary.Write(s.segmentIndexEncodeBuffer, binary.LittleEndian, newSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes)); err != nil {
+	if err = binary.Write(s.segmentIndexEncodeBuffer, binary.LittleEndian, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes)); err != nil {
 		return
 	}
 	if _, err = s.index.Write(s.segmentIndexEncodeBuffer.Bytes()); err != nil {
@@ -157,7 +151,7 @@ func maybeClose(wr io.Writer) {
 
 func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset uint64) (m Message, ok bool, err error) {
 	var indexHandle *os.File
-	indexHandle, err = openSegmentFileForRead(path, partitionIndex, startOffset, extIndex)
+	indexHandle, err = OpenSegmentFileForRead(path, partitionIndex, startOffset, ExtIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot open index file: %w", err)
 		return
@@ -165,7 +159,7 @@ func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset ui
 	defer func() { _ = indexHandle.Close() }()
 
 	var dataHandle *os.File
-	dataHandle, err = openSegmentFileForRead(path, partitionIndex, startOffset, extData)
+	dataHandle, err = OpenSegmentFileForRead(path, partitionIndex, startOffset, ExtData)
 	if err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot open data file: %w", err)
 		return
@@ -173,12 +167,12 @@ func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset ui
 	defer func() { _ = dataHandle.Close() }()
 
 	relativeOffset := offset - startOffset
-	indexSeekToBytes := int64(segmentIndexSize) * int64(relativeOffset)
+	indexSeekToBytes := int64(SegmentIndexSizeBytes) * int64(relativeOffset)
 	if _, err = indexHandle.Seek(indexSeekToBytes, io.SeekStart); err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot seek within index file: %w", err)
 		return
 	}
-	var segmentData segmentIndex
+	var segmentData SegmentIndex
 	if err = binary.Read(indexHandle, binary.LittleEndian, &segmentData); err != nil {
 		err = fmt.Errorf("diskq; get segment offset; cannot read index data: %w", err)
 		return
@@ -200,7 +194,8 @@ func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset ui
 	return
 }
 
-func openSegmentFileForRead(path string, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
-	workingSegmentPath := formatPathForSegment(path, partitionIndex, startOffset)
+// OpenSegmentFileForRead opens a segment file with a given extension in "read" mode with the correct flags.
+func OpenSegmentFileForRead(path string, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
+	workingSegmentPath := FormatPathForSegment(path, partitionIndex, startOffset)
 	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0644)
 }

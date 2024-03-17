@@ -72,7 +72,7 @@ func Test_GetOffsetAfter(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
@@ -95,7 +95,7 @@ func Test_GetOffsetAfter_empty(t *testing.T) {
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 1, len(offsets))
 
@@ -172,7 +172,7 @@ func Test_GetOffsetAfter_first(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
@@ -249,7 +249,7 @@ func Test_GetOffsetAfter_beyondNewest(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
@@ -326,7 +326,7 @@ func Test_GetOffsetAfter_equalsOldest(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
@@ -403,7 +403,7 @@ func Test_GetOffsetAfter_equalsNewest(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 

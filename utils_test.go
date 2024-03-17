@@ -31,7 +31,7 @@ func Test_getSegmentOffsets(t *testing.T) {
 		assert_noerror(t, err)
 	}
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 01)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 01)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 	assert_equal(t, []uint64{0, 13, 26}, offsets)
@@ -56,10 +56,10 @@ func Test_getSegmentNewestOffset(t *testing.T) {
 		})
 		assert_noerror(t, err)
 	}
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 01)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 01)
 	assert_noerror(t, err)
 
-	offset, err := getSegmentNewestOffset(cfg.Path, 01, offsets[len(offsets)-1])
+	offset, err := GetSegmentNewestOffset(cfg.Path, 01, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, 31, offset)
 }
@@ -73,14 +73,14 @@ func Test_getSegmentNewestOffset_empty(t *testing.T) {
 		SegmentSizeBytes: 1024,
 	}
 
-	segmentPath := formatPathForSegment(cfg.Path, 1, 0)
+	segmentPath := FormatPathForSegment(cfg.Path, 1, 0)
 	_ = os.MkdirAll(filepath.Dir(segmentPath), 0755)
 
-	f, err := os.Create(segmentPath + extIndex)
+	f, err := os.Create(segmentPath + ExtIndex)
 	assert_noerror(t, err)
 	assert_noerror(t, f.Close())
 
-	offset, err := getSegmentNewestOffset(cfg.Path, 01, 0)
+	offset, err := GetSegmentNewestOffset(cfg.Path, 01, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 0, offset)
 }
@@ -137,11 +137,11 @@ func Test_getSegmentOldestTimestamp(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := getSegmentOldestTimestamp(cfg.Path, 0, offsets[1])
+	endTimestamp, err := GetSegmentOldestTimestamp(cfg.Path, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), endTimestamp)
 }
@@ -198,15 +198,15 @@ func Test_getSegmentNewestTimestamp(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := getSegmentNewestTimestamp(cfg.Path, 0, offsets[1])
+	endTimestamp, err := GetSegmentNewestTimestamp(cfg.Path, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), endTimestamp)
 
-	endTimestamp, err = getSegmentNewestTimestamp(cfg.Path, 0, offsets[len(offsets)-1])
+	endTimestamp, err = GetSegmentNewestTimestamp(cfg.Path, 0, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC), endTimestamp)
 }
@@ -263,11 +263,11 @@ func Test_getSegmentNewestOldestTimestamps(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[1])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), oldest)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), newest)
@@ -286,11 +286,11 @@ func Test_getSegmentNewestOldestTimestamps_empty(t *testing.T) {
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 1, len(offsets))
 
-	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
 	assert_noerror(t, err)
 	assert_equal(t, true, oldest.IsZero())
 	assert_equal(t, true, newest.IsZero())
@@ -315,11 +315,11 @@ func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := getPartitionSegmentOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 1, len(offsets))
 
-	oldest, newest, err := getSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
 	assert_noerror(t, err)
 	assert_equal(t, false, oldest.IsZero())
 	assert_equal(t, false, newest.IsZero())
@@ -327,9 +327,9 @@ func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
 	assert_equal(t, time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC), newest)
 }
 
-func readIndexEntries(r io.Reader) (output []segmentIndex) {
+func readIndexEntries(r io.Reader) (output []SegmentIndex) {
 	for {
-		var si segmentIndex
+		var si SegmentIndex
 		err := binary.Read(r, binary.LittleEndian, &si)
 		if err == io.EOF {
 			return
@@ -368,7 +368,7 @@ func Test_getPartitionSizeBytes(t *testing.T) {
 	_, _, _ = dq.Push(m)
 	_, _, _ = dq.Push(m)
 
-	sizeBytes, err := getPartitionSizeBytes(testPath, 0)
+	sizeBytes, err := GetPartitionSizeBytes(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 4*messageSize, sizeBytes)
 }
