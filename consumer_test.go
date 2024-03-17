@@ -48,6 +48,79 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 	}
 }
 
+func Test_Consumer_startAtOffset_newest(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Config{
+		Path:             testPath,
+		PartitionCount:   1,
+		SegmentSizeBytes: 1024,
+	}
+
+	dq, err := New(cfg)
+	assert_noerror(t, err)
+	defer func() { _ = dq.Close() }()
+
+	var offset uint64
+	for x := 0; x < 64; x++ {
+		_, offset, err = dq.Push(Message{
+			PartitionKey: fmt.Sprintf("data-%d", x),
+			Data:         []byte(strings.Repeat("a", 64)),
+		})
+		assert_noerror(t, err)
+		assert_equal(t, x, offset)
+	}
+
+	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
+		StartBehavior: ConsumerStartBehaviorAtOffset,
+		StartOffset:   offset,
+	})
+	assert_noerror(t, err)
+	defer func() { _ = c.Close() }()
+
+	gotMessages := make(chan MessageWithOffset, 3)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		for {
+			select {
+			case err, ok := <-c.Errors():
+				if !ok {
+					return
+				}
+				assert_noerror(t, err)
+			case msg, ok := <-c.Messages():
+				if !ok {
+					return
+				}
+				gotMessages <- msg
+			}
+		}
+	}()
+	<-started
+
+	var newOffset uint64
+	_, newOffset, err = dq.Push(Message{
+		PartitionKey: fmt.Sprintf("data-%d", offset+1),
+		Data:         []byte(strings.Repeat("a", 64)),
+	})
+	assert_noerror(t, err)
+	assert_equal(t, newOffset, offset+1)
+	_, newOffset, err = dq.Push(Message{
+		PartitionKey: fmt.Sprintf("data-%d", offset+2),
+		Data:         []byte(strings.Repeat("a", 64)),
+	})
+	assert_noerror(t, err)
+	assert_equal(t, newOffset, offset+2)
+	_, newOffset, err = dq.Push(Message{
+		PartitionKey: fmt.Sprintf("data-%d", offset+3),
+		Data:         []byte(strings.Repeat("a", 64)),
+	})
+	assert_noerror(t, err)
+	assert_equal(t, newOffset, offset+3)
+}
+
 func Test_Consumer_startFromBeginning_endAtLatest(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()

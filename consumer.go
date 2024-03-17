@@ -23,9 +23,9 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("diskq; consumer; cannot stat data path: %w", err)
 	}
-	var notify *fsnotify.Watcher
+	var fsNotify *fsnotify.Watcher
 	if options.EndBehavior != ConsumerEndBehaviorClose {
-		notify, err = fsnotify.NewWatcher()
+		fsNotify, err = fsnotify.NewWatcher()
 		if err != nil {
 			return nil, err
 		}
@@ -39,8 +39,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		errors:         make(chan error, 1),
 		done:           make(chan struct{}),
 		didStart:       make(chan struct{}),
-
-		notify: notify,
+		fsNotify:       fsNotify,
 
 		// for internal filesystem events we have a buffer of (1) event
 		// so that we continually proceed when there are new offsets in
@@ -50,7 +49,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		dataWriteEvents:  make(chan struct{}, 1),
 	}
 	go c.read()
-	<-c.didStart
+	<-c.didStart // make sure not to return until the read goroutine is scheduled
 	return c, nil
 }
 
@@ -60,100 +59,6 @@ type ConsumerOptions struct {
 	StartOffset   uint64
 	EndBehavior   ConsumerEndBehavior
 	EndOffset     uint64
-}
-
-// MessageWithOffset is a special wrapping type for messages
-// that adds the partition index and the offset of messages
-// read by consumers.
-type MessageWithOffset struct {
-	Message
-	PartitionIndex uint32
-	Offset         uint64
-}
-
-// ConsumerStartBehavior controls how the consumer determines the
-// first offset it will read from.
-type ConsumerStartBehavior uint8
-
-// ConsumerStartAtBehavior values.
-const (
-	ConsumerStartBehaviorOldest ConsumerStartBehavior = iota
-	ConsumerStartBehaviorAtOffset
-	ConsumerStartBehaviorActiveSegmentOldest
-	ConsumerStartBehaviorNewest
-)
-
-// String returns a string form of the consumer start behavior.
-func (csb ConsumerStartBehavior) String() string {
-	switch csb {
-	case ConsumerStartBehaviorOldest:
-		return "oldest"
-	case ConsumerStartBehaviorAtOffset:
-		return "at-offset"
-	case ConsumerStartBehaviorActiveSegmentOldest:
-		return "active-oldest"
-	case ConsumerStartBehaviorNewest:
-		return "newest"
-	default:
-		return ""
-	}
-}
-
-// ParseConsumerStartBehavior parses a raw string as a consumer start behavior.
-func ParseConsumerStartBehavior(raw string) (startBehavior ConsumerStartBehavior, err error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "oldest":
-		startBehavior = ConsumerStartBehaviorOldest
-	case "at-offset":
-		startBehavior = ConsumerStartBehaviorAtOffset
-	case "active-oldest":
-		startBehavior = ConsumerStartBehaviorActiveSegmentOldest
-	case "newest":
-		startBehavior = ConsumerStartBehaviorNewest
-	default:
-		err = fmt.Errorf("absurd consumer start behavior: %s", raw)
-	}
-	return
-}
-
-// ConsumerEndBehavior controls how the consumer behaves when the
-// last offset is read in the active segment.
-type ConsumerEndBehavior uint8
-
-// ConsumerEndBehavior values.
-const (
-	ConsumerEndBehaviorWait ConsumerEndBehavior = iota
-	ConsumerEndBehaviorAtOffset
-	ConsumerEndBehaviorClose
-)
-
-// String returns a string form of the consumer end behavior.
-func (ceb ConsumerEndBehavior) String() string {
-	switch ceb {
-	case ConsumerEndBehaviorWait:
-		return "wait"
-	case ConsumerEndBehaviorAtOffset:
-		return "at-offset"
-	case ConsumerEndBehaviorClose:
-		return "close"
-	default:
-		return ""
-	}
-}
-
-// ParseConsumerEndBehavior parses a given raw string as a consumer end behavior.
-func ParseConsumerEndBehavior(raw string) (endBehavior ConsumerEndBehavior, err error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "wait":
-		endBehavior = ConsumerEndBehaviorWait
-	case "at-offset":
-		endBehavior = ConsumerEndBehaviorAtOffset
-	case "close":
-		endBehavior = ConsumerEndBehaviorClose
-	default:
-		err = fmt.Errorf("absurd consumer end behavior: %s", raw)
-	}
-	return
 }
 
 // Consumer handles reading messages from a given partition.
@@ -171,10 +76,11 @@ type Consumer struct {
 	options        ConsumerOptions
 	messages       chan MessageWithOffset
 	errors         chan error
-	notify         *fsnotify.Watcher
+	fsNotify       *fsnotify.Watcher
 
-	partitionActiveSegment uint64
-	workingSegment         uint64
+	partitionActiveSegmentStartOffset uint64
+	workingSegmentStartOffset         uint64
+	workingSegmentIndex               SegmentIndex
 
 	advanceEvents    chan struct{}
 	indexWriteEvents chan struct{}
@@ -221,10 +127,12 @@ func (c *Consumer) Close() error {
 	}
 
 	close(c.done)
+
 	// NOTE (wc): we have to set this to be nil
 	// 	so that we'll know if we've closed the consumer.
 	//	We should _not_ set read channels to nil because they
-	//	will not show as closed on read.
+	//	will not show as closed on read by user code if they're
+	//	set to nil.
 	c.done = nil
 
 	close(c.messages)
@@ -240,8 +148,8 @@ func (c *Consumer) Close() error {
 	c.dataHandle = nil
 
 	// we may not be notifying at all!
-	if c.notify != nil {
-		_ = c.notify.Close()
+	if c.fsNotify != nil {
+		_ = c.fsNotify.Close()
 	}
 	return nil
 }
@@ -260,8 +168,7 @@ func (c *Consumer) read() {
 	close(c.didStart)
 	c.didStart = nil
 
-	var workingSegmentData SegmentIndex
-	ok, err := c.initializeRead(&workingSegmentData)
+	ok, err := c.initializeRead()
 	if err != nil {
 		c.error(err)
 		return
@@ -279,7 +186,7 @@ func (c *Consumer) read() {
 		default:
 		}
 
-		messageData = make([]byte, workingSegmentData.GetSizeBytes())
+		messageData = make([]byte, c.workingSegmentIndex.GetSizeBytes())
 		if _, err = c.dataHandle.Read(messageData); err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot read data file: %w", err))
 			return
@@ -294,16 +201,16 @@ func (c *Consumer) read() {
 			return
 		case c.messages <- MessageWithOffset{
 			PartitionIndex: c.partitionIndex,
-			Offset:         workingSegmentData.GetOffset(),
+			Offset:         c.workingSegmentIndex.GetOffset(),
 			Message:        m,
 		}:
 		}
 
-		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && workingSegmentData.GetOffset() == c.options.EndOffset {
+		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
 			return
 		}
 
-		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites(&workingSegmentData)
+		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites()
 		if err != nil {
 			c.error(err)
 			return
@@ -314,11 +221,8 @@ func (c *Consumer) read() {
 	}
 }
 
-func (c *Consumer) initializeRead(workingSegmentData *SegmentIndex) (ok bool, err error) {
+func (c *Consumer) initializeRead() (ok bool, err error) {
 	partitionPath := FormatPathForPartition(c.path, c.partitionIndex)
-	if c.options.EndBehavior != ConsumerEndBehaviorClose {
-		go c.listenForFilesystemEvents()
-	}
 
 	offsets, err := GetPartitionSegmentStartOffsets(c.path, c.partitionIndex)
 	if err != nil {
@@ -326,33 +230,26 @@ func (c *Consumer) initializeRead(workingSegmentData *SegmentIndex) (ok bool, er
 	}
 
 	// set the active segment
-	atomic.StoreUint64(&c.partitionActiveSegment, offsets[len(offsets)-1])
+	atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, offsets[len(offsets)-1])
 	effectiveConsumeAtOffset, err := c.determineEffectiveConsumeAtOffset(offsets)
 	if err != nil {
 		return
 	}
 
 	workingSegmentOffset, _ := GetSegmentStartOffsetForOffset(offsets, effectiveConsumeAtOffset)
-	atomic.StoreUint64(&c.workingSegment, workingSegmentOffset)
+	atomic.StoreUint64(&c.workingSegmentStartOffset, workingSegmentOffset)
 
-	c.indexHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, ExtIndex)
+	c.indexHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegmentStartOffset, ExtIndex)
 	if err != nil {
 		return
 	}
-	c.dataHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, ExtData)
+	c.dataHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegmentStartOffset, ExtData)
 	if err != nil {
 		return
-	}
-
-	if c.options.EndBehavior != ConsumerEndBehaviorClose {
-		err = c.notify.Add(partitionPath)
-		if err != nil {
-			return
-		}
 	}
 
 	// seek to the correct offset
-	relativeOffset := effectiveConsumeAtOffset - c.workingSegment
+	relativeOffset := effectiveConsumeAtOffset - c.workingSegmentStartOffset
 	indexSeekToBytes := int64(SegmentIndexSizeBytes) * int64(relativeOffset)
 	if indexSeekToBytes > 0 {
 		if _, err = c.indexHandle.Seek(indexSeekToBytes, io.SeekStart); err != nil {
@@ -360,15 +257,25 @@ func (c *Consumer) initializeRead(workingSegmentData *SegmentIndex) (ok bool, er
 		}
 	}
 
-	ok, err = c.readNextSegmentIndex(workingSegmentData)
+	if c.options.EndBehavior != ConsumerEndBehaviorClose {
+		listenFilesystemStarted := make(chan struct{})
+		go c.listenForFilesystemEvents(listenFilesystemStarted)
+		<-listenFilesystemStarted
+		err = c.fsNotify.Add(partitionPath)
+		if err != nil {
+			return
+		}
+	}
+
+	ok, err = c.readNextSegmentIndex()
 	if err != nil {
 		return
 	}
 	if !ok {
 		return
 	}
-	if workingSegmentData.GetOffsetBytes() > 0 {
-		if _, err = c.dataHandle.Seek(int64(workingSegmentData.GetOffsetBytes()), io.SeekStart); err != nil {
+	if c.workingSegmentIndex.GetOffsetBytes() > 0 {
+		if _, err = c.dataHandle.Seek(int64(c.workingSegmentIndex.GetOffsetBytes()), io.SeekStart); err != nil {
 			return
 		}
 	}
@@ -376,7 +283,8 @@ func (c *Consumer) initializeRead(workingSegmentData *SegmentIndex) (ok bool, er
 	return
 }
 
-func (c *Consumer) listenForFilesystemEvents() {
+func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
+	close(started)
 	for {
 		select {
 		case <-c.done:
@@ -387,7 +295,7 @@ func (c *Consumer) listenForFilesystemEvents() {
 		select {
 		case <-c.done:
 			return
-		case event, ok := <-c.notify.Events:
+		case event, ok := <-c.fsNotify.Events:
 			if !ok {
 				return
 			}
@@ -397,7 +305,7 @@ func (c *Consumer) listenForFilesystemEvents() {
 			if event.Has(fsnotify.Create) {
 				if strings.HasSuffix(event.Name, ExtData) {
 					newSegmentStartAt, _ := parseSegmentOffsetFromPath(event.Name)
-					atomic.StoreUint64(&c.partitionActiveSegment, newSegmentStartAt)
+					atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, newSegmentStartAt)
 					select {
 					case <-c.done:
 						return
@@ -407,7 +315,7 @@ func (c *Consumer) listenForFilesystemEvents() {
 				}
 				continue
 			}
-			if atomic.LoadUint64(&c.partitionActiveSegment) != atomic.LoadUint64(&c.workingSegment) {
+			if atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) != atomic.LoadUint64(&c.workingSegmentStartOffset) {
 				continue
 			}
 			if event.Has(fsnotify.Write) {
@@ -428,7 +336,7 @@ func (c *Consumer) listenForFilesystemEvents() {
 				}
 			}
 			continue
-		case err, ok := <-c.notify.Errors:
+		case err, ok := <-c.fsNotify.Errors:
 			if !ok {
 				return
 			}
@@ -438,27 +346,27 @@ func (c *Consumer) listenForFilesystemEvents() {
 	}
 }
 
-func (c *Consumer) readNextSegmentIndex(workingSegmentData *SegmentIndex) (ok bool, err error) {
+func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 	var indexStat fs.FileInfo
 	indexStat, err = c.indexHandle.Stat()
 	if err != nil {
 		return
 	}
-	indexPosition, err := c.indexHandle.Seek(0, io.SeekCurrent)
+	currentIndexPosition, err := c.indexHandle.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
 	}
 
-	if (indexStat.Size() - indexPosition) < int64(SegmentIndexSizeBytes) {
+	if (indexStat.Size() - currentIndexPosition) < int64(SegmentIndexSizeBytes) {
 		if c.isReadingActiveSegment() {
-			ok, err = c.waitForNewOffset(workingSegmentData)
+			ok, err = c.waitForNewOffset()
 			return
 		}
-		ok, err = c.advanceToNextSegment(workingSegmentData)
+		ok, err = c.advanceToNextSegment()
 		return
 	}
 
-	if err = binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData); err != nil {
+	if err = binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); err != nil {
 		err = fmt.Errorf("cannot read next working segment index: %w", err)
 		return
 	}
@@ -466,25 +374,25 @@ func (c *Consumer) readNextSegmentIndex(workingSegmentData *SegmentIndex) (ok bo
 	return
 }
 
-func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites(workingSegmentData *SegmentIndex) (ok bool, err error) {
-	ok, err = c.readNextSegmentIndex(workingSegmentData)
+func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err error) {
+	ok, err = c.readNextSegmentIndex()
 	if err != nil || !ok {
 		return
 	}
-	ok, err = c.maybeWaitForDataWriteEvents(workingSegmentData)
+	ok, err = c.maybeWaitForDataWriteEvents()
 	return
 }
 
 func (c *Consumer) isReadingActiveSegment() bool {
-	return atomic.LoadUint64(&c.partitionActiveSegment) == atomic.LoadUint64(&c.workingSegment)
+	return atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) == atomic.LoadUint64(&c.workingSegmentStartOffset)
 }
 
-func (c *Consumer) advanceToNextSegment(workingSegmentData *SegmentIndex) (ok bool, err error) {
+func (c *Consumer) advanceToNextSegment() (ok bool, err error) {
 	err = c.advanceFilesToNextSegment()
 	if err != nil {
 		return
 	}
-	ok, err = c.readNextSegmentIndex(workingSegmentData)
+	ok, err = c.readNextSegmentIndex()
 	return
 }
 
@@ -501,13 +409,13 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	c.indexWriteEvents = make(chan struct{}, 1)
 	c.dataWriteEvents = make(chan struct{}, 1)
 
-	atomic.StoreUint64(&c.workingSegment, c.getNextSegment(offsets))
-	c.indexHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, ExtIndex)
+	atomic.StoreUint64(&c.workingSegmentStartOffset, c.getNextSegment(offsets))
+	c.indexHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegmentStartOffset, ExtIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot open index file: %w", err)
 		return
 	}
-	c.dataHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegment, ExtData)
+	c.dataHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegmentStartOffset, ExtData)
 	if err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot open data file: %w", err)
 		return
@@ -515,7 +423,7 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	return
 }
 
-func (c *Consumer) waitForNewOffset(workingSegmentData *SegmentIndex) (ok bool, err error) {
+func (c *Consumer) waitForNewOffset() (ok bool, err error) {
 	if c.options.EndBehavior == ConsumerEndBehaviorClose {
 		return
 	}
@@ -532,7 +440,7 @@ sized:
 			if !ok {
 				return
 			}
-			ok, err = c.advanceToNextSegment(workingSegmentData)
+			ok, err = c.advanceToNextSegment()
 			return
 
 		case _, ok = <-c.indexWriteEvents:
@@ -553,16 +461,17 @@ sized:
 		}
 	}
 
-	readErr := binary.Read(c.indexHandle, binary.LittleEndian, workingSegmentData)
+	readErr := binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex)
 	if readErr != nil {
 		err = fmt.Errorf("diskq; consumer; wait for new offsets; cannot read segment: %w", readErr)
 		return
 	}
-	ok, err = c.maybeWaitForDataWriteEvents(workingSegmentData)
+
+	ok, err = c.maybeWaitForDataWriteEvents()
 	return
 }
 
-func (c *Consumer) maybeWaitForDataWriteEvents(workingSegmentData *SegmentIndex) (ok bool, err error) {
+func (c *Consumer) maybeWaitForDataWriteEvents() (ok bool, err error) {
 	var dataStat fs.FileInfo
 	dataStat, err = c.dataHandle.Stat()
 	if err != nil {
@@ -574,13 +483,7 @@ func (c *Consumer) maybeWaitForDataWriteEvents(workingSegmentData *SegmentIndex)
 	if err != nil {
 		return
 	}
-
-	if dataPosition != int64(workingSegmentData.GetOffsetBytes()) {
-		err = fmt.Errorf("corrupted working segment position versus data position; data_position=%d vs working_segment=%d", dataPosition, workingSegmentData.GetOffsetBytes())
-		return
-	}
-
-	if dataSizeBytes-dataPosition < int64(workingSegmentData.GetSizeBytes()) {
+	if dataSizeBytes-dataPosition < int64(c.workingSegmentIndex.GetSizeBytes()) {
 		for {
 			_, ok = <-c.dataWriteEvents
 			if !ok {
@@ -595,7 +498,7 @@ func (c *Consumer) maybeWaitForDataWriteEvents(workingSegmentData *SegmentIndex)
 			if err != nil {
 				return
 			}
-			if dataSizeBytes-dataPosition >= int64(workingSegmentData.GetSizeBytes()) {
+			if dataSizeBytes-dataPosition >= int64(c.workingSegmentIndex.GetSizeBytes()) {
 				return
 			}
 		}
@@ -606,11 +509,11 @@ func (c *Consumer) maybeWaitForDataWriteEvents(workingSegmentData *SegmentIndex)
 
 func (c *Consumer) getNextSegment(offsets []uint64) (nextWorkingSegment uint64) {
 	for _, offset := range offsets {
-		if offset > c.workingSegment {
+		if offset > c.workingSegmentStartOffset {
 			return offset
 		}
 	}
-	return c.partitionActiveSegment
+	return c.partitionActiveSegmentStartOffset
 }
 
 func (c *Consumer) error(err error) {
@@ -627,7 +530,14 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 	switch c.options.StartBehavior {
 	case ConsumerStartBehaviorAtOffset:
 		if c.options.StartOffset < offsets[0] {
-			return 0, fmt.Errorf("diskq; consume; invalid start at offset: %d", c.options.StartOffset)
+			return 0, fmt.Errorf("diskq; consumer; start at offset beyond oldest offset: %d", c.options.StartOffset)
+		}
+		newestOffset, err := GetSegmentNewestOffset(c.path, c.partitionIndex, offsets[len(offsets)-1])
+		if err != nil {
+			return 0, err
+		}
+		if c.options.StartOffset > newestOffset {
+			return 0, fmt.Errorf("diskq; consumer; start at offset beyond newest offset: %d", c.options.StartOffset)
 		}
 		return c.options.StartOffset + 1, nil
 	case ConsumerStartBehaviorOldest:
@@ -637,6 +547,6 @@ func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, 
 	case ConsumerStartBehaviorNewest:
 		return GetSegmentNewestOffset(c.path, c.partitionIndex, offsets[len(offsets)-1])
 	default:
-		return 0, fmt.Errorf("diskq; consume; absurd start at behavior: %d", c.options.StartBehavior)
+		return 0, fmt.Errorf("diskq; consumer; absurd start at behavior: %d", c.options.StartBehavior)
 	}
 }
