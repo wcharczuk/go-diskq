@@ -20,7 +20,7 @@ func main() {
 	cfg := diskq.Config{
 		Path:             tempPath,
 		PartitionCount:   1,
-		SegmentSizeBytes: 1 << 32,
+		SegmentSizeBytes: 1 << 33, // 16gb per segment
 	}
 
 	dq, err := diskq.New(cfg)
@@ -32,7 +32,7 @@ func main() {
 
 	testStart := time.Now()
 
-	for x := 0; x < 16384; x++ {
+	for x := 0; x < 65536; x++ {
 		_, _, _ = dq.Push(diskq.Message{
 			PartitionKey: fmt.Sprintf("message-%d", x),
 			TimestampUTC: testStart.Add(-time.Duration(x) * time.Minute),
@@ -43,7 +43,7 @@ func main() {
 	var linearTimes []time.Duration
 	for x := 0; x < 32; x++ {
 		start := time.Now()
-		_, _, _ = getOffsetAfterLinear(tempPath, 0, testStart.Add(-2048*time.Minute))
+		_, _, _ = getOffsetAfterLinear(tempPath, 0, testStart.Add(-4096*time.Minute))
 		linearTimes = append(linearTimes, time.Since(start))
 	}
 
