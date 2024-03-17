@@ -138,7 +138,7 @@ func getSegmentOldestNewestTimestamps(path string, partitionIndex uint32, startO
 	return
 }
 
-func getSegmentNewestOffset(path string, partitionIndex uint32, startOffset uint64) (endOffset uint64, err error) {
+func getSegmentNewestOffset(path string, partitionIndex uint32, startOffset uint64) (newestOffset uint64, err error) {
 	var segment segmentIndex
 	var f *os.File
 	f, err = os.Open(formatPathForSegment(path, partitionIndex, startOffset) + extIndex)
@@ -155,7 +155,7 @@ func getSegmentNewestOffset(path string, partitionIndex uint32, startOffset uint
 
 	fsize := fstat.Size()
 	if fsize < int64(segmentIndexSize) {
-		endOffset = startOffset
+		newestOffset = startOffset
 		return
 	}
 
@@ -166,7 +166,39 @@ func getSegmentNewestOffset(path string, partitionIndex uint32, startOffset uint
 	if err != nil {
 		return
 	}
-	endOffset = segment.GetOffset()
+	newestOffset = segment.GetOffset()
+	return
+}
+
+func getSegmentNewestOldestOffsetFromTimeIndexHandle(f *os.File) (oldestOffset, newestOffset uint64, err error) {
+	var fstat fs.FileInfo
+	fstat, err = f.Stat()
+	if err != nil {
+		return
+	}
+	fsize := fstat.Size()
+	if fsize < int64(segmentIndexSize) {
+		return
+	}
+
+	var segment segmentTimeIndex
+	if _, err = f.Seek(0, io.SeekStart); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	oldestOffset = segment.GetOffset()
+
+	if _, err = f.Seek(-int64(segmentTimeIndexSize), io.SeekEnd); err != nil {
+		return
+	}
+	err = binary.Read(f, binary.LittleEndian, &segment)
+	if err != nil {
+		return
+	}
+	newestOffset = segment.GetOffset()
 	return
 }
 

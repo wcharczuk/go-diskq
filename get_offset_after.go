@@ -13,11 +13,8 @@ import (
 // the found bool will be false.
 //
 // GetOffsetAfter first will iterate over the individual partion segments until it finds one whose newest timestamp is before
-// the given after timestamp value, then will iterate over the individual timestamps in the time index for the segment
+// the given after timestamp value, then will use a binary search over the individual timestamps in the time index for the segment
 // until the correct offset is found.
-//
-// A possible future optimization will be to binary search the timeindex file but the thinking currently is that
-// seeks can be slightly expensive within a file handle, and it's best to just read the file sequentially.
 func GetOffsetAfter(path string, partitionIndex uint32, after time.Time) (offset uint64, found bool, err error) {
 	var segments []uint64
 	segments, err = getPartitionSegmentOffsets(path, partitionIndex)
@@ -47,19 +44,44 @@ func GetOffsetAfter(path string, partitionIndex uint32, after time.Time) (offset
 	if err != nil {
 		return
 	}
-	defer segmentTimeIndexHandle.Close()
+	defer func() { _ = segmentTimeIndexHandle.Close() }()
 
-	var sti segmentTimeIndex
-	for {
-		err = binary.Read(segmentTimeIndexHandle, binary.LittleEndian, &sti)
-		if err == io.EOF {
-			err = nil
-			found = false
-			return
+	oldestOffset, newestOffset, err := getSegmentNewestOldestOffsetFromTimeIndexHandle(segmentTimeIndexHandle)
+	if err != nil {
+		return
+	}
+	offsets := newestOffset - oldestOffset
+
+	var searchTimeIndex segmentTimeIndex
+	offset, err = searchOffsets(offsets, func(relativeOffset uint64) (bool, error) {
+		seekBytes := int64(relativeOffset) * int64(segmentTimeIndexSize)
+		_, searchErr := segmentTimeIndexHandle.Seek(seekBytes, io.SeekStart)
+		if searchErr != nil {
+			return false, searchErr
 		}
-		if sti.GetTimestampUTC().After(after) {
-			offset = sti.GetOffset()
-			return
+		searchErr = binary.Read(segmentTimeIndexHandle, binary.LittleEndian, &searchTimeIndex)
+		if searchErr != nil {
+			return false, searchErr
+		}
+		return searchTimeIndex.GetTimestampUTC().After(after), nil
+	})
+	offset = offset + oldestOffset
+	return
+}
+
+func searchOffsets(n uint64, f func(uint64) (bool, error)) (uint64, error) {
+	i, j := uint64(0), n
+	for i < j {
+		h := uint64(i+j) >> 1
+		less, err := f(h)
+		if err != nil {
+			return 0, err
+		}
+		if !less {
+			i = h + 1
+		} else {
+			j = h
 		}
 	}
+	return i, nil
 }
