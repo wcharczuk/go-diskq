@@ -50,7 +50,7 @@ func main() {
 	var binaryTimes []time.Duration
 	for x := 0; x < 32; x++ {
 		start := time.Now()
-		_, _, _ = diskq.GetOffsetAfter(tempPath, 0, testStart.Add(-2048*time.Minute))
+		_, _, _ = diskq.GetOffsetAfter(tempPath, 0, testStart.Add(-4096*time.Minute))
 		binaryTimes = append(binaryTimes, time.Since(start))
 	}
 
