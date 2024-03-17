@@ -9,7 +9,7 @@
 
 # Goals
 
-The goal of `go-diskq` is to provide a single node equivalent of Kafka. Think what sqlite is to something like Postgres; a library complete implementation of Kafka which writes to a local disk.
+The goal of `go-diskq` is to provide a single node equivalent of Kafka, similar to what sqlite is to Postgres. `go-diskq` is a library implementation of a streaming system which writes to a local disk.
 
 It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
 
