@@ -33,7 +33,6 @@ func GetStats(path string) (*Stats, error) {
 			output.Age = partitionAge
 		}
 	}
-	output.AgeString = output.Age.Round(time.Second).String()
 	return &output, nil
 }
 
@@ -85,7 +84,6 @@ type Stats struct {
 	InUse        bool
 	TotalOffsets uint64
 	Age          time.Duration
-	AgeString    string
 	Partitions   []PartitionStats
 }
 
