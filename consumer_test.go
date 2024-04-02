@@ -10,13 +10,12 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		PartitionCount:   1,
 		SegmentSizeBytes: 1024,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 
@@ -52,13 +51,12 @@ func Test_Consumer_startAtOffset_newest(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		PartitionCount:   1,
 		SegmentSizeBytes: 1024,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 
@@ -125,13 +123,12 @@ func Test_Consumer_startFromBeginning_endAtLatest(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		PartitionCount:   1,
 		SegmentSizeBytes: 1024,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 
@@ -168,6 +165,108 @@ messageloop:
 			}
 			assert_noerror(t, err)
 		}
+	}
+}
+
+func Test_Consumer_endAtOffset(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Options{
+		PartitionCount:   1,
+		SegmentSizeBytes: 1024,
+	}
+
+	dq, err := New(testPath, cfg)
+	assert_noerror(t, err)
+	defer func() { _ = dq.Close() }()
+
+	var offset uint64
+	for x := 0; x < 64; x++ {
+		_, offset, err = dq.Push(Message{
+			PartitionKey: fmt.Sprintf("data-%d", x),
+			Data:         []byte(strings.Repeat("a", 512)),
+		})
+		assert_noerror(t, err)
+		assert_equal(t, x, offset)
+	}
+
+	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
+		StartBehavior: ConsumerStartBehaviorAtOffset,
+		StartOffset:   33,
+		EndBehavior:   ConsumerEndBehaviorAtOffset,
+		EndOffset:     48,
+	})
+	assert_noerror(t, err)
+	defer func() { _ = c.Close() }()
+
+	var messages []MessageWithOffset
+	var x = 34
+messageloop:
+	for {
+		select {
+		case msg, ok := <-c.Messages():
+			if !ok {
+				break messageloop
+			}
+			assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
+			messages = append(messages, msg)
+			x++
+		case err, ok := <-c.Errors():
+			if !ok {
+				break messageloop
+			}
+			assert_noerror(t, err)
+		}
+	}
+	assert_equal(t, 15, len(messages))
+	assert_equal(t, "data-48", messages[len(messages)-1].Message.PartitionKey)
+}
+
+func Test_Consumer_endWait(t *testing.T) {
+	testPath, done := tempDir()
+	defer done()
+
+	cfg := Options{
+		PartitionCount:   1,
+		SegmentSizeBytes: 1024,
+	}
+	dq, err := New(testPath, cfg)
+	assert_noerror(t, err)
+	defer func() { _ = dq.Close() }()
+
+	publisherPush := make(chan struct{}, 128)
+	publisherQuit := make(chan struct{})
+	go func() {
+		var x int
+		for {
+			select {
+			case <-publisherPush:
+				_, _, err := dq.Push(Message{
+					PartitionKey: fmt.Sprintf("data-%d", x),
+					Data:         []byte(strings.Repeat("a", 512)),
+				})
+				assert_noerror(t, err)
+				x++
+			case <-publisherQuit:
+				return
+			}
+		}
+	}()
+	defer close(publisherQuit)
+
+	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
+		StartBehavior: ConsumerStartBehaviorOldest,
+		EndBehavior:   ConsumerEndBehaviorWait,
+	})
+	assert_noerror(t, err)
+	defer func() { _ = c.Close() }()
+
+	for x := 0; x < 128; x++ {
+		publisherPush <- struct{}{}
+		msg, ok := <-c.Messages()
+		assert_equal(t, true, ok)
+		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
 	}
 }
 

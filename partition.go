@@ -7,33 +7,34 @@ import (
 	"time"
 )
 
-func NewPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
+func NewPartition(path string, cfg Options, partitionIndex uint32) (*Partition, error) {
+	intendedPath := FormatPathForPartition(path, partitionIndex)
 	if _, err := os.Stat(intendedPath); err != nil {
-		return createPartition(cfg, partitionIndex)
+		return createPartition(path, cfg, partitionIndex)
 	}
-	return openPartition(cfg, partitionIndex)
+	return openPartition(path, cfg, partitionIndex)
 }
 
-func createPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
+func createPartition(path string, cfg Options, partitionIndex uint32) (*Partition, error) {
+	intendedPath := FormatPathForPartition(path, partitionIndex)
 	if err := os.MkdirAll(intendedPath, 0755); err != nil {
 		return nil, fmt.Errorf("diskq; create partition; cannot create intended path: %w", err)
 	}
 
-	segment, err := CreateSegment(cfg.Path, partitionIndex, 0)
+	segment, err := CreateSegment(path, partitionIndex, 0)
 	if err != nil {
 		return nil, err
 	}
 	return &Partition{
+		path:          path,
 		cfg:           cfg,
 		index:         partitionIndex,
 		activeSegment: segment,
 	}, nil
 }
 
-func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
-	intendedPath := FormatPathForPartition(cfg.Path, partitionIndex)
+func openPartition(path string, cfg Options, partitionIndex uint32) (*Partition, error) {
+	intendedPath := FormatPathForPartition(path, partitionIndex)
 	dirEntries, err := os.ReadDir(intendedPath)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; open partition; cannot read intended path: %w", err)
@@ -50,7 +51,7 @@ func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 	if err != nil {
 		return nil, err
 	}
-	segment, err := OpenSegment(cfg.Path, partitionIndex, uint64(lastSegmentStartOffset))
+	segment, err := OpenSegment(path, partitionIndex, uint64(lastSegmentStartOffset))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,8 @@ func openPartition(cfg Config, partitionIndex uint32) (*Partition, error) {
 
 type Partition struct {
 	mu            sync.Mutex
-	cfg           Config
+	path          string
+	cfg           Options
 	index         uint32
 	activeSegment *Segment
 }
@@ -90,7 +92,7 @@ func (p *Partition) Vacuum() error {
 		return nil
 	}
 
-	segmentOffsets, err := GetPartitionSegmentStartOffsets(p.cfg.Path, p.index)
+	segmentOffsets, err := GetPartitionSegmentStartOffsets(p.path, p.index)
 	if err != nil {
 		return err
 	}
@@ -114,7 +116,7 @@ func (p *Partition) Vacuum() error {
 			}
 		}
 		if p.cfg.RetentionMaxBytes > 0 {
-			partitionSizeBytes, err := GetPartitionSizeBytes(p.cfg.Path, p.index)
+			partitionSizeBytes, err := GetPartitionSizeBytes(p.path, p.index)
 			if err != nil {
 				return err
 			}
@@ -147,7 +149,7 @@ func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
-	newActive, err := CreateSegment(p.cfg.Path, p.index, p.activeSegment.endOffset)
+	newActive, err := CreateSegment(p.path, p.index, p.activeSegment.endOffset)
 	if err != nil {
 		return err
 	}
@@ -161,7 +163,7 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
 	var endTimestamp time.Time
-	endTimestamp, err = GetSegmentOldestTimestamp(p.cfg.Path, p.index, startOffset)
+	endTimestamp, err = GetSegmentOldestTimestamp(p.path, p.index, startOffset)
 	if err != nil {
 		return
 	}
@@ -171,7 +173,7 @@ func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegmen
 }
 
 func (p *Partition) vacuumSegment(startOffset uint64) error {
-	segmentRoot := FormatPathForSegment(p.cfg.Path, p.index, startOffset)
+	segmentRoot := FormatPathForSegment(p.path, p.index, startOffset)
 	if err := os.Remove(segmentRoot + ExtData); err != nil {
 		return err
 	}

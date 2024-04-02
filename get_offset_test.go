@@ -7,16 +7,15 @@ import (
 )
 
 func Test_GetOffset(t *testing.T) {
-	tempPath, done := tempDir()
+	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             tempPath,
+	cfg := Options{
 		PartitionCount:   3,
 		SegmentSizeBytes: 1024, // 1kb
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 
 	partitionOffsets := make(map[uint32]map[uint64]struct{})
@@ -47,7 +46,7 @@ func Test_GetOffset(t *testing.T) {
 		break
 	}
 
-	message, ok, err := GetOffset(tempPath, randomPartitionIndex, randomOffset)
+	message, ok, err := GetOffset(testPath, randomPartitionIndex, randomOffset)
 	assert_noerror(t, err)
 	assert_equal(t, true, ok)
 	assert_equal(t, true, strings.HasPrefix(string(message.Data), "data-"))

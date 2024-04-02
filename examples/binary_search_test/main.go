@@ -17,13 +17,12 @@ func main() {
 	tempPath, done := tempDir()
 	defer done()
 
-	cfg := diskq.Config{
-		Path:             tempPath,
+	cfg := diskq.Options{
 		PartitionCount:   1,
 		SegmentSizeBytes: 1 << 33, // 16gb per segment
 	}
 
-	dq, err := diskq.New(cfg)
+	dq, err := diskq.New(tempPath, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return

@@ -14,13 +14,9 @@ func main() {
 	tempPath, done := tempDir()
 	defer done()
 
-	cfg := diskq.Config{
-		Path: tempPath,
-	}
-
 	fmt.Printf("using temp path: %s\n", tempPath)
 
-	dq, err := diskq.New(cfg)
+	dq, err := diskq.New(tempPath, diskq.Options{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
@@ -40,7 +36,7 @@ func main() {
 		}
 	}()
 
-	c0, err := diskq.OpenConsumer(cfg.Path, 0, diskq.ConsumerOptions{
+	c0, err := diskq.OpenConsumer(tempPath, 0, diskq.ConsumerOptions{
 		StartBehavior: diskq.ConsumerStartBehaviorOldest,
 	})
 	if err != nil {
@@ -58,7 +54,7 @@ func main() {
 		}
 	}()
 
-	c1, err := diskq.OpenConsumer(cfg.Path, 1, diskq.ConsumerOptions{
+	c1, err := diskq.OpenConsumer(tempPath, 1, diskq.ConsumerOptions{
 		StartBehavior: diskq.ConsumerStartBehaviorOldest,
 	})
 	if err != nil {
@@ -76,7 +72,7 @@ func main() {
 		}
 	}()
 
-	c2, _ := diskq.OpenConsumer(cfg.Path, 2, diskq.ConsumerOptions{
+	c2, _ := diskq.OpenConsumer(tempPath, 2, diskq.ConsumerOptions{
 		StartBehavior: diskq.ConsumerStartBehaviorOldest,
 	})
 	go func() {

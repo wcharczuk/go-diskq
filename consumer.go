@@ -23,27 +23,23 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("diskq; consumer; cannot stat data path: %w", err)
 	}
-	var fsNotify *fsnotify.Watcher
+	var fsEvents *fsnotify.Watcher
 	if options.EndBehavior != ConsumerEndBehaviorClose {
-		fsNotify, err = fsnotify.NewWatcher()
+		fsEvents, err = fsnotify.NewWatcher()
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	c := &Consumer{
-		path:           path,
-		partitionIndex: partitionIndex,
-		options:        options,
-		messages:       make(chan MessageWithOffset),
-		errors:         make(chan error, 1),
-		done:           make(chan struct{}),
-		didStart:       make(chan struct{}),
-		fsNotify:       fsNotify,
-
-		// for internal filesystem events we have a buffer of (1) event
-		// so that we continually proceed when there are new offsets in
-		// the active segment.
+		path:             path,
+		partitionIndex:   partitionIndex,
+		options:          options,
+		fsEvents:         fsEvents,
+		messages:         make(chan MessageWithOffset),
+		errors:           make(chan error, 1),
+		done:             make(chan struct{}),
+		didStart:         make(chan struct{}),
 		advanceEvents:    make(chan struct{}, 1),
 		indexWriteEvents: make(chan struct{}, 1),
 		dataWriteEvents:  make(chan struct{}, 1),
@@ -74,20 +70,19 @@ type Consumer struct {
 	path           string
 	partitionIndex uint32
 	options        ConsumerOptions
-	messages       chan MessageWithOffset
-	errors         chan error
-	fsNotify       *fsnotify.Watcher
+	fsEvents       *fsnotify.Watcher
+
+	messages         chan MessageWithOffset
+	errors           chan error
+	advanceEvents    chan struct{}
+	indexWriteEvents chan struct{}
+	dataWriteEvents  chan struct{}
+	didStart         chan struct{}
+	done             chan struct{}
 
 	partitionActiveSegmentStartOffset uint64
 	workingSegmentStartOffset         uint64
 	workingSegmentIndex               SegmentIndex
-
-	advanceEvents    chan struct{}
-	indexWriteEvents chan struct{}
-	dataWriteEvents  chan struct{}
-
-	didStart chan struct{}
-	done     chan struct{}
 
 	indexHandle *os.File
 	dataHandle  *os.File
@@ -148,8 +143,8 @@ func (c *Consumer) Close() error {
 	c.dataHandle = nil
 
 	// we may not be notifying at all!
-	if c.fsNotify != nil {
-		_ = c.fsNotify.Close()
+	if c.fsEvents != nil {
+		_ = c.fsEvents.Close()
 	}
 	return nil
 }
@@ -206,10 +201,6 @@ func (c *Consumer) read() {
 		}:
 		}
 
-		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
-			return
-		}
-
 		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites()
 		if err != nil {
 			c.error(err)
@@ -261,7 +252,7 @@ func (c *Consumer) initializeRead() (ok bool, err error) {
 		listenFilesystemStarted := make(chan struct{})
 		go c.listenForFilesystemEvents(listenFilesystemStarted)
 		<-listenFilesystemStarted
-		err = c.fsNotify.Add(partitionPath)
+		err = c.fsEvents.Add(partitionPath)
 		if err != nil {
 			return
 		}
@@ -289,22 +280,21 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 		select {
 		case <-c.done:
 			return
-		default:
-		}
-
-		select {
-		case <-c.done:
-			return
-		case event, ok := <-c.fsNotify.Events:
+		case event, ok := <-c.fsEvents.Events:
 			if !ok {
 				return
 			}
-			if c.indexHandle == nil {
-				return
-			}
 			if event.Has(fsnotify.Create) {
-				if strings.HasSuffix(event.Name, ExtData) {
-					newSegmentStartAt, _ := parseSegmentOffsetFromPath(event.Name)
+				if strings.HasSuffix(event.Name, ExtIndex) {
+					newSegmentStartAt, err := parseSegmentOffsetFromPath(event.Name)
+					if err != nil {
+						select {
+						case <-c.done:
+							return
+						case c.errors <- err:
+						default:
+						}
+					}
 					atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, newSegmentStartAt)
 					select {
 					case <-c.done:
@@ -312,13 +302,18 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 					case c.advanceEvents <- struct{}{}:
 					default:
 					}
+					select {
+					case <-c.done:
+						return
+					case c.indexWriteEvents <- struct{}{}:
+					default:
+					}
 				}
-				continue
-			}
-			if atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) != atomic.LoadUint64(&c.workingSegmentStartOffset) {
-				continue
 			}
 			if event.Has(fsnotify.Write) {
+				if atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) != atomic.LoadUint64(&c.workingSegmentStartOffset) {
+					continue
+				}
 				if event.Name == c.indexHandle.Name() {
 					select {
 					case <-c.done:
@@ -335,8 +330,7 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 					}
 				}
 			}
-			continue
-		case err, ok := <-c.fsNotify.Errors:
+		case err, ok := <-c.fsEvents.Errors:
 			if !ok {
 				return
 			}
@@ -352,6 +346,7 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 	if err != nil {
 		return
 	}
+
 	currentIndexPosition, err := c.indexHandle.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
@@ -375,6 +370,9 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 }
 
 func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err error) {
+	if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
+		return
+	}
 	ok, err = c.readNextSegmentIndex()
 	if err != nil || !ok {
 		return
@@ -403,13 +401,12 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
 		return
 	}
+
 	_ = c.indexHandle.Close()
 	_ = c.dataHandle.Close()
 
-	c.indexWriteEvents = make(chan struct{}, 1)
-	c.dataWriteEvents = make(chan struct{}, 1)
-
 	atomic.StoreUint64(&c.workingSegmentStartOffset, c.getNextSegment(offsets))
+
 	c.indexHandle, err = OpenSegmentFileForRead(c.path, c.partitionIndex, c.workingSegmentStartOffset, ExtIndex)
 	if err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot open index file: %w", err)
@@ -499,6 +496,7 @@ func (c *Consumer) maybeWaitForDataWriteEvents() (ok bool, err error) {
 				return
 			}
 			if dataSizeBytes-dataPosition >= int64(c.workingSegmentIndex.GetSizeBytes()) {
+				ok = true
 				return
 			}
 		}

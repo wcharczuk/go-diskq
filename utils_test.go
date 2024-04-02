@@ -15,12 +15,11 @@ func Test_getSegmentOffsets(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 1024,
 	}
 
-	p, err := createPartition(cfg, 01)
+	p, err := createPartition(testPath, cfg, 01)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -31,7 +30,7 @@ func Test_getSegmentOffsets(t *testing.T) {
 		assert_noerror(t, err)
 	}
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 01)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 01)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 	assert_equal(t, []uint64{0, 13, 26}, offsets)
@@ -41,12 +40,11 @@ func Test_getSegmentNewestOffset(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 1024,
 	}
 
-	p, err := createPartition(cfg, 01)
+	p, err := createPartition(testPath, cfg, 01)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -56,10 +54,10 @@ func Test_getSegmentNewestOffset(t *testing.T) {
 		})
 		assert_noerror(t, err)
 	}
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 01)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 01)
 	assert_noerror(t, err)
 
-	offset, err := GetSegmentNewestOffset(cfg.Path, 01, offsets[len(offsets)-1])
+	offset, err := GetSegmentNewestOffset(testPath, 01, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, 31, offset)
 }
@@ -68,19 +66,14 @@ func Test_getSegmentNewestOffset_empty(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
-		SegmentSizeBytes: 1024,
-	}
-
-	segmentPath := FormatPathForSegment(cfg.Path, 1, 0)
+	segmentPath := FormatPathForSegment(testPath, 1, 0)
 	_ = os.MkdirAll(filepath.Dir(segmentPath), 0755)
 
 	f, err := os.Create(segmentPath + ExtIndex)
 	assert_noerror(t, err)
 	assert_noerror(t, f.Close())
 
-	offset, err := GetSegmentNewestOffset(cfg.Path, 01, 0)
+	offset, err := GetSegmentNewestOffset(testPath, 01, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 0, offset)
 }
@@ -89,12 +82,11 @@ func Test_getSegmentOldestTimestamp(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
 	}
 
-	p, err := createPartition(cfg, 00)
+	p, err := createPartition(testPath, cfg, 00)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -137,11 +129,11 @@ func Test_getSegmentOldestTimestamp(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := GetSegmentOldestTimestamp(cfg.Path, 0, offsets[1])
+	endTimestamp, err := GetSegmentOldestTimestamp(testPath, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), endTimestamp)
 }
@@ -150,12 +142,11 @@ func Test_getSegmentNewestTimestamp(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
 	}
 
-	p, err := createPartition(cfg, 00)
+	p, err := createPartition(testPath, cfg, 00)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -198,15 +189,15 @@ func Test_getSegmentNewestTimestamp(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	endTimestamp, err := GetSegmentNewestTimestamp(cfg.Path, 0, offsets[1])
+	endTimestamp, err := GetSegmentNewestTimestamp(testPath, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), endTimestamp)
 
-	endTimestamp, err = GetSegmentNewestTimestamp(cfg.Path, 0, offsets[len(offsets)-1])
+	endTimestamp, err = GetSegmentNewestTimestamp(testPath, 0, offsets[len(offsets)-1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 15, 10, 9, time.UTC), endTimestamp)
 }
@@ -215,12 +206,11 @@ func Test_getSegmentNewestOldestTimestamps(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
 	}
 
-	p, err := createPartition(cfg, 00)
+	p, err := createPartition(testPath, cfg, 00)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -263,11 +253,11 @@ func Test_getSegmentNewestOldestTimestamps(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 3, len(offsets))
 
-	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[1])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(testPath, 0, offsets[1])
 	assert_noerror(t, err)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 12, 10, 9, time.UTC), oldest)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 13, 10, 9, time.UTC), newest)
@@ -277,20 +267,19 @@ func Test_getSegmentNewestOldestTimestamps_empty(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
 	}
 
-	p, err := createPartition(cfg, 00)
+	p, err := createPartition(testPath, cfg, 00)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 1, len(offsets))
 
-	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(testPath, 0, offsets[0])
 	assert_noerror(t, err)
 	assert_equal(t, true, oldest.IsZero())
 	assert_equal(t, true, newest.IsZero())
@@ -300,12 +289,11 @@ func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 32 * 1024 * 1024, // 32mb
 	}
 
-	p, err := createPartition(cfg, 00)
+	p, err := createPartition(testPath, cfg, 00)
 	assert_noerror(t, err)
 	assert_notnil(t, p)
 
@@ -315,11 +303,11 @@ func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
 	})
 	assert_noerror(t, err)
 
-	offsets, err := GetPartitionSegmentStartOffsets(cfg.Path, 0)
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 0)
 	assert_noerror(t, err)
 	assert_equal(t, 1, len(offsets))
 
-	oldest, newest, err := GetSegmentOldestNewestTimestamps(cfg.Path, 0, offsets[0])
+	oldest, newest, err := GetSegmentOldestNewestTimestamps(testPath, 0, offsets[0])
 	assert_noerror(t, err)
 	assert_equal(t, false, oldest.IsZero())
 	assert_equal(t, false, newest.IsZero())
@@ -355,12 +343,11 @@ func Test_getPartitionSizeBytes(t *testing.T) {
 	}
 	messageSize := messageSizeBytes(m)
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		SegmentSizeBytes: 3 * messageSize,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 
 	_, _, _ = dq.Push(m)

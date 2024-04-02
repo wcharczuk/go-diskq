@@ -34,6 +34,7 @@ func main() {
 		Usage: "Interact with diskq streams on disk.",
 		Commands: []*cli.Command{
 			commandRead(),
+			commandCreate(),
 			commandWrite(),
 			commandVacuum(),
 			commandStats(),
@@ -50,19 +51,45 @@ func debugf(cmd *cli.Command, format string, args ...any) {
 	}
 }
 
+func commandCreate() *cli.Command {
+	return &cli.Command{
+		Name:  "create",
+		Usage: "Create a diskq.",
+		Flags: append(globalFlags, &cli.IntFlag{
+			Name:  "segment-max-size-bytes",
+			Value: diskq.DefaultSegmentSizeBytes,
+		}),
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			dq, err := diskq.New(cmd.String("path"), diskq.Options{})
+			if err != nil {
+				return err
+			}
+			var message diskq.Message
+			if err := json.NewDecoder(os.Stdin).Decode(&message); err != nil {
+				return err
+			}
+			partition, offset, err := dq.Push(message)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("success! partition=%d offset=%d\n", partition, offset)
+			return nil
+		},
+	}
+}
+
 func commandWrite() *cli.Command {
 	return &cli.Command{
 		Name:  "write",
 		Usage: "Write message data read from STDIN to a given stream.",
-		Flags: globalFlags,
+		Flags: append(globalFlags, &cli.IntFlag{
+			Name: "segment-max-size-bytes",
+		}),
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			dq, err := diskq.New(diskq.Config{
-				Path: cmd.String("path"),
-			})
+			dq, err := diskq.New(cmd.String("path"), diskq.Options{})
 			if err != nil {
 				return err
 			}
-
 			var message diskq.Message
 			if err := json.NewDecoder(os.Stdin).Decode(&message); err != nil {
 				return err
@@ -94,8 +121,7 @@ func commandVacuum() *cli.Command {
 			},
 		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			dq, err := diskq.New(diskq.Config{
-				Path:              cmd.String("path"),
+			dq, err := diskq.New(cmd.String("path"), diskq.Options{
 				RetentionMaxBytes: cmd.Int("max-bytes"),
 				RetentionMaxAge:   cmd.Duration("max-age"),
 			})
@@ -180,6 +206,12 @@ func commandRead() *cli.Command {
 				Value: 5 * time.Second,
 				Usage: "The interval to automatically flush offset marker offsets.",
 			},
+			&cli.BoolFlag{
+				Name:    "verbose",
+				Aliases: []string{"v"},
+				Value:   false,
+				Usage:   "If we should show the 'full' message output including the partition key, the offset, and timestamp.",
+			},
 		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			startBehavior, err := diskq.ParseConsumerStartBehavior(cmd.String("start"))
@@ -193,6 +225,7 @@ func commandRead() *cli.Command {
 
 			flagPath := cmd.String("path")
 			flagPartition := cmd.Int("partition")
+			flagVerbose := cmd.Bool("verbose")
 
 			if flagPartition >= 0 {
 				consumerOptions := diskq.ConsumerOptions{
@@ -211,7 +244,7 @@ func commandRead() *cli.Command {
 					if err != nil {
 						return err
 					}
-					defer om.Close()
+					defer func() { _ = om.Close() }()
 					if found {
 						debugf(cmd, "diskq; resuming at offset", "partition", flagPartition, "offset", om.Offset())
 						consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
@@ -226,6 +259,7 @@ func commandRead() *cli.Command {
 					return err
 				}
 				defer func() { _ = consumer.Close() }()
+
 				go func() {
 					for {
 						msg, ok := <-consumer.Messages()
@@ -235,7 +269,7 @@ func commandRead() *cli.Command {
 						if om != nil {
 							om.AddOffset(msg.Offset)
 						}
-						fmt.Println(string(msg.Data))
+						readPrint(msg, flagVerbose)
 					}
 				}()
 				shutdown := make(chan os.Signal, 1)
@@ -326,7 +360,7 @@ func commandRead() *cli.Command {
 						offsetMarkers[msg.PartitionIndex].AddOffset(msg.Offset)
 						offsetMarkersMu.Unlock()
 					}
-					fmt.Println(string(msg.Data))
+					readPrint(msg, flagVerbose)
 				}
 			}()
 			shutdown := make(chan os.Signal, 1)
@@ -343,6 +377,15 @@ func commandRead() *cli.Command {
 				return err
 			}
 		},
+	}
+}
+
+func readPrint(msg diskq.MessageWithOffset, verbose bool) {
+	if verbose {
+		data, _ := json.Marshal(msg)
+		fmt.Println(string(data))
+	} else {
+		fmt.Println(string(msg.Data))
 	}
 }
 

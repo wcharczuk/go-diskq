@@ -12,22 +12,23 @@ import (
 //
 // The `Diskq` type itself should be thought of as a producer with
 // exclusive access to write to the data directory named in the config.
-func New(cfg Config) (*Diskq, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
+//
+// If the diskq exists on disk, new empty partitions will be created
+// and existing ones opened at their latest offsets for writing.
+func New(path string, cfg Options) (*Diskq, error) {
 	d := &Diskq{
-		id:  UUIDv4(),
-		cfg: cfg,
+		id:   UUIDv4(),
+		path: path,
+		cfg:  cfg,
 	}
-	if err := os.MkdirAll(cfg.Path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, fmt.Errorf("diskq; cannot ensure data directory: %w", err)
 	}
 	if err := d.writeSentinel(); err != nil {
 		return nil, err
 	}
 	for partitionIndex := 0; partitionIndex < int(cfg.PartitionCountOrDefault()); partitionIndex++ {
-		p, err := NewPartition(cfg, uint32(partitionIndex))
+		p, err := NewPartition(path, cfg, uint32(partitionIndex))
 		if err != nil {
 			return nil, err
 		}
@@ -36,13 +37,16 @@ func New(cfg Config) (*Diskq, error) {
 	return d, nil
 }
 
-// Diskq is the root struct of the queue.
+// Diskq is the root struct of the diskq.
 //
 // It could be thought of primarily as the "producer" in the
-// streaming system; you will use this type to "Push" messages into the streams.
+// streaming system; you will use this type to "Push" messages into the partitions.
+//
+// Close will release open file handles that are held by the partitions.
 type Diskq struct {
 	id         UUID
-	cfg        Config
+	path       string
+	cfg        Options
 	partitions []*Partition
 }
 
@@ -116,21 +120,21 @@ func (dq *Diskq) Close() error {
 //
 
 func (dq *Diskq) writeSentinel() error {
-	sentinelPath := FormatPathForSentinel(dq.cfg.Path)
+	sentinelPath := FormatPathForSentinel(dq.path)
 	sf, err := os.OpenFile(sentinelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		return fmt.Errorf("diskq; cannot open stream in exclusive mode: %w", err)
+		return fmt.Errorf("diskq; write sentinel; cannot open file in exclusive mode: %w", err)
 	}
 	defer func() { _ = sf.Close() }()
 	_, err = sf.Write(dq.id[:])
 	if err != nil {
-		return fmt.Errorf("diskq; cannot set stream exclusive mode: %w", err)
+		return fmt.Errorf("diskq; write sentinel; cannot write id to file: %w", err)
 	}
 	return nil
 }
 
 func (dq *Diskq) releaseSentinel() error {
-	sentinelPath := FormatPathForSentinel(dq.cfg.Path)
+	sentinelPath := FormatPathForSentinel(dq.path)
 	return os.Remove(sentinelPath)
 }
 

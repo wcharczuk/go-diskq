@@ -10,13 +10,12 @@ func Test_Read(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		PartitionCount:   3,
 		SegmentSizeBytes: 1024,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 
@@ -42,13 +41,12 @@ func Test_Read_stopsOnError(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
 
-	cfg := Config{
-		Path:             testPath,
+	cfg := Options{
 		PartitionCount:   3,
 		SegmentSizeBytes: 1024,
 	}
 
-	dq, err := New(cfg)
+	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 

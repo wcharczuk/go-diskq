@@ -33,14 +33,13 @@ func main() {
 
 	fmt.Printf("using data path: %s\n", path)
 
-	cfg := diskq.Config{
-		Path:             path,
+	cfg := diskq.Options{
 		PartitionCount:   uint32(*flagPartitions),
 		SegmentSizeBytes: 1 << 20, // 1mb
 		RetentionMaxAge:  5 * time.Minute,
 	}
 
-	dq, err := diskq.New(cfg)
+	dq, err := diskq.New(path, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
