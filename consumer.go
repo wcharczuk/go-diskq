@@ -317,6 +317,7 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 					default:
 					}
 				}
+				continue
 			}
 			if event.Has(fsnotify.Write) {
 				if atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) != atomic.LoadUint64(&c.workingSegmentStartOffset) {
@@ -328,13 +329,16 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 						return
 					case c.indexWriteEvents <- struct{}{}:
 					default:
+						continue
 					}
-				} else if event.Name == c.dataHandle.Name() {
+				}
+				if event.Name == c.dataHandle.Name() {
 					select {
 					case <-c.done:
 						return
 					case c.dataWriteEvents <- struct{}{}:
 					default:
+						continue
 					}
 				}
 			}
