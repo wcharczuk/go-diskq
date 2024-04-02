@@ -54,25 +54,29 @@ func debugf(cmd *cli.Command, format string, args ...any) {
 func commandCreate() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
-		Usage: "Create a diskq.",
-		Flags: append(globalFlags, &cli.IntFlag{
-			Name:  "segment-max-size-bytes",
-			Value: diskq.DefaultSegmentSizeBytes,
-		}),
+		Usage: "Create an empty diskq stream.",
+		Flags: append(globalFlags,
+			&cli.IntFlag{
+				Name:  "segment-size-bytes",
+				Usage: "The size of segments in bytes.",
+				Value: diskq.DefaultSegmentSizeBytes,
+			},
+			&cli.IntFlag{
+				Name:  "partition-count",
+				Usage: "The number of diskq partitions.",
+				Value: diskq.DefaultPartitionCount,
+			},
+		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			dq, err := diskq.New(cmd.String("path"), diskq.Options{})
+			dq, err := diskq.New(cmd.String("path"), diskq.Options{
+				PartitionCount:   uint32(cmd.Int("partition-count")),
+				SegmentSizeBytes: int64(cmd.Int("segment-size-bytes")),
+			})
 			if err != nil {
 				return err
 			}
-			var message diskq.Message
-			if err := json.NewDecoder(os.Stdin).Decode(&message); err != nil {
-				return err
-			}
-			partition, offset, err := dq.Push(message)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("success! partition=%d offset=%d\n", partition, offset)
+			defer func() { _ = dq.Close() }()
+			fmt.Printf("success! diskq created at %q with partitions=%d segment-size-bytes=%d\n", cmd.String("path"), uint32(cmd.Int("partition-count")), int64(cmd.Int("segment-size-bytes")))
 			return nil
 		},
 	}
@@ -98,7 +102,7 @@ func commandWrite() *cli.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("success! partition=%d offset=%d\n", partition, offset)
+			fmt.Printf("success! wrote message to partition=%d offset=%d\n", partition, offset)
 			return nil
 		},
 	}
