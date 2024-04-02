@@ -280,6 +280,12 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 		select {
 		case <-c.done:
 			return
+		default:
+		}
+
+		select {
+		case <-c.done:
+			return
 		case event, ok := <-c.fsEvents.Events:
 			if !ok {
 				return
@@ -416,6 +422,9 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 
 	_ = c.indexHandle.Close()
 	_ = c.dataHandle.Close()
+
+	c.indexWriteEvents = make(chan struct{}, 1)
+	c.dataWriteEvents = make(chan struct{}, 1)
 
 	atomic.StoreUint64(&c.workingSegmentStartOffset, c.getNextSegment(offsets))
 
