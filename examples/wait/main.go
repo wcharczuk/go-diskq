@@ -55,13 +55,14 @@ func main() {
 	maybeFatal(err)
 
 	for x := 0; x < 128; x++ {
-		go func() {
-			publisherPush <- struct{}{}
-		}()
+		publisherPush <- struct{}{}
 		msg, ok := <-c.Messages()
 		if !ok {
 			fmt.Println("messages closed!")
 			return
+		}
+		if msg.Message.PartitionKey != fmt.Sprintf("data-%d", x) {
+			maybeFatal(fmt.Errorf("expected %s, got %s", fmt.Sprintf("data-%d", x), msg.Message.PartitionKey))
 		}
 		fmt.Println("received", msg.Message.PartitionKey)
 	}
