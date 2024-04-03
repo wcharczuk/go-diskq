@@ -62,9 +62,10 @@ func main() {
 			return
 		}
 		if msg.Message.PartitionKey != fmt.Sprintf("data-%d", x) {
-			maybeFatal(fmt.Errorf("expected %s, got %s", fmt.Sprintf("data-%d", x), msg.Message.PartitionKey))
+			maybeFatal(fmt.Errorf("[%d] expected %s, got %s", x, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey))
+		} else {
+			fmt.Printf("[%d] received %v\n", x, msg.Message.PartitionKey)
 		}
-		fmt.Println("received", msg.Message.PartitionKey)
 	}
 }
 

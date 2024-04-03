@@ -174,8 +174,8 @@ func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
 				}
 			}
 			started := make(chan struct{})
-			go cg.pipeEvents(consumer, started)
 			atomic.AddInt32(&cg.activeConsumers, 1)
+			go cg.pipeEvents(consumer, started)
 			<-started
 			cg.consumers[partitionIndex] = consumer
 		}

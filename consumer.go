@@ -202,6 +202,9 @@ func (c *Consumer) read() {
 		}:
 		}
 
+		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
+			return
+		}
 		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites()
 		if err != nil {
 			c.error(err)
@@ -260,11 +263,25 @@ func (c *Consumer) initializeRead() (ok bool, err error) {
 	}
 
 	ok, err = c.readNextSegmentIndex()
+	if !ok || err != nil {
+		return
+	}
+
+	ok, err = c.hasEnoughDataForRead()
 	if err != nil {
 		return
 	}
 	if !ok {
-		return
+		if c.options.EndBehavior == ConsumerEndBehaviorClose {
+			return
+		}
+		ok, err = c.maybeWaitForDataWriteEventsUntilSizeGoal(int64(c.workingSegmentIndex.GetOffsetBytes() + c.workingSegmentIndex.GetSizeBytes()))
+		if err != nil {
+			return
+		}
+		if !ok {
+			return
+		}
 	}
 	if c.workingSegmentIndex.GetOffsetBytes() > 0 {
 		if _, err = c.dataHandle.Seek(int64(c.workingSegmentIndex.GetOffsetBytes()), io.SeekStart); err != nil {
@@ -272,6 +289,16 @@ func (c *Consumer) initializeRead() (ok bool, err error) {
 		}
 	}
 	ok = true
+	return
+}
+
+func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err error) {
+	ok, err = c.readNextSegmentIndex()
+	if !ok || err != nil {
+		return
+	}
+	sizeGoal := int64(c.workingSegmentIndex.GetOffsetBytes() + c.workingSegmentIndex.GetSizeBytes())
+	ok, err = c.maybeWaitForDataWriteEventsUntilSizeGoal(sizeGoal)
 	return
 }
 
@@ -291,75 +318,11 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 			if !ok {
 				return
 			}
-			if event.Has(fsnotify.Create) {
-				if strings.HasSuffix(event.Name, ExtIndex) {
-					newSegmentStartAt, err := parseSegmentOffsetFromPath(event.Name)
-					if err != nil {
-						select {
-						case <-c.done:
-							return
-						case c.errors <- err:
-						default:
-						}
-					}
-
-					// when there is a file create in the form ****.index we assume **** is the new
-					// "active" segment, or the segment with the highest starting offset.
-					atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, newSegmentStartAt)
-
-					// if we are blocked at the end of an index file (that is the current position is
-					// such that size-pos == 0, we should signal that we should replace our current file
-					// handles with the active segment file handles.
-					select {
-					case <-c.done:
-						return
-					case c.advanceEvents <- struct{}{}:
-					default:
-					}
-
-					// the create _also_ implies that the index was effectively written to
-					// and we should notify consumer if it is awaiting writes.
-					select {
-					case <-c.done:
-						return
-					case c.indexWriteEvents <- struct{}{}:
-					default:
-					}
-				}
-				if strings.HasSuffix(event.Name, ExtData) {
-					select {
-					case <-c.done:
-						return
-					case c.dataWriteEvents <- struct{}{}:
-					default:
-					}
-				}
-				continue
+			ok = c.handleFilesystemEvent(event)
+			if !ok {
+				return
 			}
-			if event.Has(fsnotify.Write) {
-				if atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) != atomic.LoadUint64(&c.workingSegmentStartOffset) {
-					continue
-				}
-				if event.Name == c.indexHandle.Name() {
-					select {
-					case <-c.done:
-						return
-					case c.indexWriteEvents <- struct{}{}:
-					default:
-						continue
-					}
-				}
-				if event.Name == c.dataHandle.Name() {
-					select {
-					case <-c.done:
-						return
-					case c.dataWriteEvents <- struct{}{}:
-					default:
-						continue
-					}
-				}
-				continue
-			}
+
 		case err, ok := <-c.fsEvents.Errors:
 			if !ok {
 				return
@@ -370,57 +333,82 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 	}
 }
 
+func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.indexHandle == nil {
+		return
+	}
+
+	if event.Has(fsnotify.Create) {
+		if strings.HasSuffix(event.Name, ExtIndex) {
+			newSegmentStartAt, err := parseSegmentOffsetFromPath(event.Name)
+			if err != nil {
+				c.error(err)
+				return
+			}
+			atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, newSegmentStartAt)
+			select {
+			case c.advanceEvents <- struct{}{}:
+			default:
+			}
+		}
+	}
+	if event.Has(fsnotify.Write) {
+		if event.Name == c.indexHandle.Name() {
+			select {
+			case c.indexWriteEvents <- struct{}{}:
+			default:
+			}
+		}
+		if event.Name == c.dataHandle.Name() {
+			select {
+			case c.dataWriteEvents <- struct{}{}:
+			default:
+			}
+		}
+	}
+	ok = true
+	return
+}
+
 func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 	var indexStat fs.FileInfo
 	indexStat, err = c.indexHandle.Stat()
 	if err != nil {
 		return
 	}
-
 	currentIndexPosition, err := c.indexHandle.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
 	}
 
-	if (indexStat.Size() - currentIndexPosition) < int64(SegmentIndexSizeBytes) {
+	if indexStat.Size() < currentIndexPosition+int64(SegmentIndexSizeBytes) {
 		if c.isReadingActiveSegment() {
-			ok, err = c.waitForNewOffset()
-			return
+			if c.options.EndBehavior == ConsumerEndBehaviorClose {
+				return
+			}
+			ok, err = c.maybeWaitForNextOffsetOrAdvance()
+			if !ok || err != nil {
+				return
+			}
+		} else {
+			err = c.advanceFilesToNextSegment()
+			if err != nil {
+				return
+			}
+			ok, err = c.maybeWaitForIndexWrite()
+			if !ok || err != nil {
+				return
+			}
 		}
-		ok, err = c.advanceToNextSegment()
-		return
 	}
-
 	if err = binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); err != nil {
-		err = fmt.Errorf("cannot read next working segment index: %w", err)
+		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
 		return
 	}
 	ok = true
-	return
-}
-
-func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err error) {
-	if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
-		return
-	}
-	ok, err = c.readNextSegmentIndex()
-	if err != nil || !ok {
-		return
-	}
-	ok, err = c.maybeWaitForDataWriteEvents()
-	return
-}
-
-func (c *Consumer) isReadingActiveSegment() bool {
-	return atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) == atomic.LoadUint64(&c.workingSegmentStartOffset)
-}
-
-func (c *Consumer) advanceToNextSegment() (ok bool, err error) {
-	err = c.advanceFilesToNextSegment()
-	if err != nil {
-		return
-	}
-	ok, err = c.readNextSegmentIndex()
 	return
 }
 
@@ -456,15 +444,54 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	return
 }
 
-func (c *Consumer) waitForNewOffset() (ok bool, err error) {
-	if c.options.EndBehavior == ConsumerEndBehaviorClose {
+func (c *Consumer) maybeWaitForNextOffsetOrAdvance() (ok bool, err error) {
+	var didAdvance bool
+	didAdvance, ok, err = c.maybeWaitForIndexWriteOrAdvance()
+	if err != nil {
+		return
+	}
+	if !ok {
+		return
+	}
+	if didAdvance {
+		ok, err = c.maybeWaitForIndexWrite()
+		if !ok || err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (c *Consumer) maybeWaitForIndexWrite() (ok bool, err error) {
+	ok, err = c.hasEnoughIndexForRead()
+	if ok || err != nil {
+		return
+	}
+	for {
+		select {
+		case <-c.done:
+			return
+		case _, ok = <-c.indexWriteEvents:
+			if !ok {
+				return
+			}
+			ok, err = c.hasEnoughIndexForRead()
+			if err != nil {
+				return
+			}
+			if ok {
+				return
+			}
+		}
+	}
+}
+
+func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, err error) {
+	ok, err = c.hasEnoughIndexForRead()
+	if ok || err != nil {
 		return
 	}
 
-	var indexStat fs.FileInfo
-	var indexPosition int64
-
-sized:
 	for {
 		select {
 		case <-c.done:
@@ -473,53 +500,78 @@ sized:
 			if !ok {
 				return
 			}
-			ok, err = c.advanceToNextSegment()
+			err = c.advanceFilesToNextSegment()
+			if err != nil {
+				return
+			}
+			// ok is already true!
+			didAdvance = true
 			return
-
 		case _, ok = <-c.indexWriteEvents:
 			if !ok {
 				return
 			}
-			indexStat, err = c.indexHandle.Stat()
+			ok, err = c.hasEnoughIndexForRead()
 			if err != nil {
 				return
 			}
-			indexPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
-			if err != nil {
+			if ok {
 				return
-			}
-			if indexStat.Size()-indexPosition >= int64(SegmentIndexSizeBytes) {
-				break sized
 			}
 		}
 	}
+}
 
-	readErr := binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex)
-	if readErr != nil {
-		err = fmt.Errorf("diskq; consumer; wait for new offsets; cannot read segment: %w", readErr)
+func (c *Consumer) hasEnoughIndexForRead() (ok bool, err error) {
+	var indexStat fs.FileInfo
+	indexStat, err = c.indexHandle.Stat()
+	if err != nil {
 		return
 	}
-
-	ok, err = c.maybeWaitForDataWriteEvents()
+	var indexPosition int64
+	indexPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return
+	}
+	indexSizeBytes := indexStat.Size()
+	needIndexBytes := indexPosition + int64(SegmentIndexSizeBytes)
+	ok = indexSizeBytes >= needIndexBytes
 	return
 }
 
-func (c *Consumer) maybeWaitForDataWriteEvents() (ok bool, err error) {
+func (c *Consumer) hasEnoughDataForRead() (ok bool, err error) {
 	var dataStat fs.FileInfo
 	dataStat, err = c.dataHandle.Stat()
 	if err != nil {
 		return
 	}
 	dataSizeBytes := dataStat.Size()
+	needDataBytes := int64(c.workingSegmentIndex.GetOffsetBytes() + c.workingSegmentIndex.GetSizeBytes())
+	ok = dataSizeBytes >= needDataBytes
+	return
+}
 
-	dataPosition, err := c.dataHandle.Seek(0, io.SeekCurrent)
+func (c *Consumer) isReadingActiveSegment() bool {
+	return atomic.LoadUint64(&c.partitionActiveSegmentStartOffset) == atomic.LoadUint64(&c.workingSegmentStartOffset)
+}
+
+func (c *Consumer) maybeWaitForDataWriteEventsUntilSizeGoal(sizeGoal int64) (ok bool, err error) {
+	if !c.isReadingActiveSegment() {
+		ok = true
+		return
+	}
+	var dataStat fs.FileInfo
+	dataStat, err = c.dataHandle.Stat()
 	if err != nil {
 		return
 	}
-	if dataSizeBytes-dataPosition < int64(c.workingSegmentIndex.GetSizeBytes()) {
-		for {
-			_, ok = <-c.dataWriteEvents
-			if !ok {
+	dataSizeBytes := dataStat.Size()
+	for dataSizeBytes < sizeGoal {
+		select {
+		case <-c.done:
+			return
+		case _, eventOK := <-c.dataWriteEvents:
+			if !eventOK {
 				return
 			}
 			dataStat, err = c.dataHandle.Stat()
@@ -527,14 +579,6 @@ func (c *Consumer) maybeWaitForDataWriteEvents() (ok bool, err error) {
 				return
 			}
 			dataSizeBytes = dataStat.Size()
-			dataPosition, err = c.dataHandle.Seek(0, io.SeekCurrent)
-			if err != nil {
-				return
-			}
-			if dataSizeBytes-dataPosition >= int64(c.workingSegmentIndex.GetSizeBytes()) {
-				ok = true
-				return
-			}
 		}
 	}
 	ok = true

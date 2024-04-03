@@ -72,9 +72,13 @@ func main() {
 		}
 	}()
 
-	c2, _ := diskq.OpenConsumer(tempPath, 2, diskq.ConsumerOptions{
+	c2, err := diskq.OpenConsumer(tempPath, 2, diskq.ConsumerOptions{
 		StartBehavior: diskq.ConsumerStartBehaviorOldest,
 	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return
+	}
 	go func() {
 		for {
 			_, ok := <-c2.Messages()
