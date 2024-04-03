@@ -66,7 +66,8 @@ type ConsumerOptions struct {
 // is read in the active segment, or just block and wait for new offsets
 // to be written to the active segment (this is the default behavior).
 type Consumer struct {
-	mu             sync.Mutex
+	mu sync.Mutex
+
 	path           string
 	partitionIndex uint32
 	options        ConsumerOptions
@@ -301,13 +302,23 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 						default:
 						}
 					}
+
+					// when there is a file create in the form ****.index we assume **** is the new
+					// "active" segment, or the segment with the highest starting offset.
 					atomic.StoreUint64(&c.partitionActiveSegmentStartOffset, newSegmentStartAt)
+
+					// if we are blocked at the end of an index file (that is the current position is
+					// such that size-pos == 0, we should signal that we should replace our current file
+					// handles with the active segment file handles.
 					select {
 					case <-c.done:
 						return
 					case c.advanceEvents <- struct{}{}:
 					default:
 					}
+
+					// the create _also_ implies that the index was effectively written to
+					// and we should notify consumer if it is awaiting writes.
 					select {
 					case <-c.done:
 						return
@@ -347,6 +358,7 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 						continue
 					}
 				}
+				continue
 			}
 		case err, ok := <-c.fsEvents.Errors:
 			if !ok {
@@ -413,10 +425,13 @@ func (c *Consumer) advanceToNextSegment() (ok bool, err error) {
 }
 
 func (c *Consumer) advanceFilesToNextSegment() (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	var offsets []uint64
 	offsets, err = GetPartitionSegmentStartOffsets(c.path, c.partitionIndex)
 	if err != nil {
-		c.error(fmt.Errorf("diskq; consumer; cannot get partition offsets: %w", err))
+		c.error(fmt.Errorf("diskq; consumer; cannot get partition start offsets: %w", err))
 		return
 	}
 
