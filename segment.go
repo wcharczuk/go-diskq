@@ -144,7 +144,7 @@ func (s *Segment) Close() error {
 }
 
 func maybeClose(wr io.Writer) {
-	if typed, ok := wr.(io.Closer); ok {
+	if typed, ok := wr.(io.Closer); ok && typed != nil {
 		_ = typed.Close()
 	}
 }
@@ -197,5 +197,5 @@ func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset ui
 // OpenSegmentFileForRead opens a segment file with a given extension in "read" mode with the correct flags.
 func OpenSegmentFileForRead(path string, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
 	workingSegmentPath := FormatPathForSegment(path, partitionIndex, startOffset)
-	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0644)
+	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0 /*we aren't going to create the file*/)
 }

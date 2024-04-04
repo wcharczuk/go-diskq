@@ -1,9 +1,6 @@
 package diskq
 
 import (
-	"bytes"
-	"encoding/binary"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -313,23 +310,6 @@ func Test_getSegmentNewestOldestTimestamps_single(t *testing.T) {
 	assert_equal(t, false, newest.IsZero())
 	assert_equal(t, time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC), oldest)
 	assert_equal(t, time.Date(2024, 01, 02, 12, 10, 10, 9, time.UTC), newest)
-}
-
-func readIndexEntries(r io.Reader) (output []SegmentIndex) {
-	for {
-		var si SegmentIndex
-		err := binary.Read(r, binary.LittleEndian, &si)
-		if err == io.EOF {
-			return
-		}
-		output = append(output, si)
-	}
-}
-
-func messageSizeBytes(m Message) int64 {
-	data := new(bytes.Buffer)
-	_ = Encode(m, data)
-	return int64(data.Len())
 }
 
 func Test_getPartitionSizeBytes(t *testing.T) {

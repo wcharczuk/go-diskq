@@ -1,11 +1,16 @@
 package diskq
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func tempDir() (string, func()) {
@@ -104,4 +109,29 @@ func isNil(object any) bool {
 		return true
 	}
 	return false
+}
+
+func readIndexEntries(r io.Reader) (output []SegmentIndex) {
+	for {
+		var si SegmentIndex
+		err := binary.Read(r, binary.LittleEndian, &si)
+		if err == io.EOF {
+			return
+		}
+		output = append(output, si)
+	}
+}
+
+func messageSizeBytes(m Message) int64 {
+	data := new(bytes.Buffer)
+	_ = Encode(m, data)
+	return int64(data.Len())
+}
+
+func testMessage(index int, dataSize int64) Message {
+	return Message{
+		TimestampUTC: time.Date(2024, 04, 05, 12, 11, 10, 9, time.UTC),
+		PartitionKey: fmt.Sprintf("data-%03d", index),
+		Data:         []byte(strings.Repeat("a", int(dataSize))),
+	}
 }

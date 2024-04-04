@@ -32,12 +32,14 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	_, _, _ = dq.Push(m)
 
 	// expect a new active segment
-	assert_equal(t, 4, dq.partitions[expectPartitionKey].activeSegment.startOffset)
+	assert_equal(t, 3, dq.partitions[expectPartitionKey].activeSegment.startOffset)
 
 	_, _, _ = dq.Push(m)
 	_, _, _ = dq.Push(m)
 	_, _, _ = dq.Push(m)
 	_, _, _ = dq.Push(m)
+
+	assert_equal(t, 6, dq.partitions[expectPartitionKey].activeSegment.startOffset)
 
 	// now we need to tear apart the individual partition files
 
@@ -57,27 +59,31 @@ func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	assert_equal(t, 2*messageSize, entries[2].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[2].GetSizeBytes())
 
-	assert_equal(t, 3, entries[3].GetOffset())
-	assert_equal(t, 3*messageSize, entries[3].GetOffsetBytes())
-	assert_equal(t, messageSize, entries[3].GetSizeBytes())
-
-	index01, err := os.ReadFile(FormatPathForSegment(testPath, uint32(expectPartitionKey), 4) + ExtIndex)
+	index01, err := os.ReadFile(FormatPathForSegment(testPath, uint32(expectPartitionKey), 3) + ExtIndex)
 	assert_noerror(t, err)
 
 	entries = readIndexEntries(bytes.NewReader(index01))
-	assert_equal(t, 4, entries[0].GetOffset())
+	assert_equal(t, 3, entries[0].GetOffset())
 	assert_equal(t, 0, entries[0].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[0].GetSizeBytes())
 
-	assert_equal(t, 5, entries[1].GetOffset())
+	assert_equal(t, 4, entries[1].GetOffset())
 	assert_equal(t, messageSize, entries[1].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[1].GetSizeBytes())
 
-	assert_equal(t, 6, entries[2].GetOffset())
+	assert_equal(t, 5, entries[2].GetOffset())
 	assert_equal(t, 2*messageSize, entries[2].GetOffsetBytes())
 	assert_equal(t, messageSize, entries[2].GetSizeBytes())
 
-	assert_equal(t, 7, entries[3].GetOffset())
-	assert_equal(t, 3*messageSize, entries[3].GetOffsetBytes())
-	assert_equal(t, messageSize, entries[3].GetSizeBytes())
+	index02, err := os.ReadFile(FormatPathForSegment(testPath, uint32(expectPartitionKey), 6) + ExtIndex)
+	assert_noerror(t, err)
+
+	entries = readIndexEntries(bytes.NewReader(index02))
+	assert_equal(t, 6, entries[0].GetOffset())
+	assert_equal(t, 0, entries[0].GetOffsetBytes())
+	assert_equal(t, messageSize, entries[0].GetSizeBytes())
+
+	assert_equal(t, 7, entries[1].GetOffset())
+	assert_equal(t, messageSize, entries[1].GetOffsetBytes())
+	assert_equal(t, messageSize, entries[1].GetSizeBytes())
 }

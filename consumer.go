@@ -272,14 +272,8 @@ func (c *Consumer) initializeRead() (ok bool, err error) {
 		return
 	}
 	if !ok {
-		if c.options.EndBehavior == ConsumerEndBehaviorClose {
-			return
-		}
 		ok, err = c.maybeWaitForDataWriteEventsUntilSizeGoal(int64(c.workingSegmentIndex.GetOffsetBytes() + c.workingSegmentIndex.GetSizeBytes()))
-		if err != nil {
-			return
-		}
-		if !ok {
+		if !ok || err != nil {
 			return
 		}
 	}
@@ -427,6 +421,7 @@ func (c *Consumer) advanceFilesToNextSegment() (err error) {
 	_ = c.dataHandle.Close()
 
 	c.indexWriteEvents = make(chan struct{}, 1)
+	c.indexWriteEvents <- struct{}{}
 	c.dataWriteEvents = make(chan struct{}, 1)
 
 	atomic.StoreUint64(&c.workingSegmentStartOffset, c.getNextSegment(offsets))

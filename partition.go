@@ -145,7 +145,7 @@ func (p *Partition) Close() error {
 //
 
 func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
-	return int64(segment.endOffsetBytes) > p.cfg.SegmentSizeBytesOrDefault()
+	return int64(segment.endOffsetBytes) >= p.cfg.SegmentSizeBytesOrDefault()
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
