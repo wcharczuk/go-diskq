@@ -223,28 +223,7 @@ func Test_Consumer_startAtEmptyActiveSegment(t *testing.T) {
 		EndBehavior:   ConsumerEndBehaviorWait,
 	})
 	assert_noerror(t, err)
-	defer func() { _ = c.Close() }()
-
-	gotMessages := make(chan MessageWithOffset, 1)
-	started := make(chan struct{})
-	go func() {
-		close(started)
-		for {
-			select {
-			case err, ok := <-c.Errors():
-				if !ok {
-					return
-				}
-				assert_noerror(t, err)
-			case msg, ok := <-c.Messages():
-				if !ok {
-					return
-				}
-				gotMessages <- msg
-			}
-		}
-	}()
-	<-started
+	t.Cleanup(func() { _ = c.Close() })
 
 	var newOffset uint64
 	_, newOffset, err = dq.Push(testMessage(int(offset+1), 64))
@@ -266,14 +245,17 @@ func Test_Consumer_startAtEmptyActiveSegment(t *testing.T) {
 	entries01 = readIndexEntries(bytes.NewReader(index01))
 	assert_equal(t, 1, len(entries01))
 
-	gotMessage := <-gotMessages
-	assert_equal(t, fmt.Sprintf("data-%03d", offset+2), gotMessage.Message.PartitionKey)
+	gotMessage := <-c.Messages()
+	assert_equal(t, fmt.Sprintf("data-%03d", offset+1), gotMessage.Message.PartitionKey)
 
 	_, newOffset, err = dq.Push(testMessage(int(offset+3), 64))
 	assert_noerror(t, err)
 	assert_equal(t, newOffset, offset+3)
 
-	gotMessage = <-gotMessages
+	gotMessage = <-c.Messages()
+	assert_equal(t, fmt.Sprintf("data-%03d", offset+2), gotMessage.Message.PartitionKey)
+
+	gotMessage = <-c.Messages()
 	assert_equal(t, fmt.Sprintf("data-%03d", offset+3), gotMessage.Message.PartitionKey)
 }
 
