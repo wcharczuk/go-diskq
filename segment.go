@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -77,6 +78,8 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 }
 
 type Segment struct {
+	mu sync.Mutex
+
 	startOffset    uint64
 	endOffset      uint64
 	endOffsetBytes uint64
@@ -90,6 +93,9 @@ type Segment struct {
 }
 
 func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if message.TimestampUTC.IsZero() {
 		message.TimestampUTC = time.Now().UTC()
 	}
@@ -136,17 +142,44 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	return
 }
 
-func (s *Segment) Close() error {
-	maybeClose(s.data)
-	maybeClose(s.index)
-	maybeClose(s.timeindex)
+// Sync calls fsync on the (3) underlying file handles for the segment.
+func (s *Segment) Sync() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := maybeSync(s.index); err != nil {
+		return err
+	}
+	if err := maybeSync(s.timeindex); err != nil {
+		return err
+	}
+	if err := maybeSync(s.data); err != nil {
+		return err
+	}
 	return nil
 }
 
-func maybeClose(wr io.Writer) {
-	if typed, ok := wr.(io.Closer); ok && typed != nil {
-		_ = typed.Close()
+// Close closes the segment.
+func (s *Segment) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := maybeClose(s.data); err != nil {
+		return err
 	}
+	if err := maybeClose(s.index); err != nil {
+		return err
+	}
+	if err := maybeClose(s.timeindex); err != nil {
+		return err
+	}
+	return nil
+}
+
+func maybeClose(wr io.Writer) (err error) {
+	if typed, ok := wr.(io.Closer); ok && typed != nil {
+		err = typed.Close()
+	}
+	return
 }
 
 func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset uint64) (m Message, ok bool, err error) {

@@ -1,8 +1,6 @@
 package diskq
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -20,13 +18,9 @@ func Test_ConsumerGroup_readToEnd(t *testing.T) {
 	defer func() { _ = dq.Close() }()
 
 	for x := 0; x < 64; x++ {
-		_, _, err = dq.Push(Message{
-			PartitionKey: fmt.Sprintf("data-%d", x),
-			Data:         []byte(strings.Repeat("a", 64)),
-		})
+		_, _, err = dq.Push(testMessage(int(x), 128))
 		assert_noerror(t, err)
 	}
-
 	cg, err := OpenConsumerGroup(testPath, ConsumerGroupOptionsFromConsumerOptions(ConsumerOptions{
 		StartBehavior: ConsumerStartBehaviorOldest,
 		EndBehavior:   ConsumerEndBehaviorClose,

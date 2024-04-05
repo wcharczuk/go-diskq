@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func Test_Consumer_startFromBeginning(t *testing.T) {
+func Test_Consumer_startFromOldest(t *testing.T) {
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
@@ -33,6 +33,7 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 
 	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
 		StartBehavior: ConsumerStartBehaviorOldest,
+		EndBehavior:   ConsumerEndBehaviorClose,
 	})
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
@@ -43,7 +44,8 @@ func Test_Consumer_startFromBeginning(t *testing.T) {
 		default:
 		}
 		assert_noerror(t, err)
-		msg := <-c.Messages()
+		msg, ok := <-c.Messages()
+		assert_equal(t, true, ok)
 		assert_equal(t, x, msg.Offset)
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
 	}
@@ -219,32 +221,11 @@ func Test_Consumer_startAtEmptyActiveSegment(t *testing.T) {
 
 	c, err := OpenConsumer(testPath, 0, ConsumerOptions{
 		StartBehavior: ConsumerStartBehaviorAtOffset,
-		StartOffset:   3,
+		StartOffset:   2,
 		EndBehavior:   ConsumerEndBehaviorWait,
 	})
 	assert_noerror(t, err)
-	defer func() { _ = c.Close() }()
-
-	gotMessages := make(chan MessageWithOffset, 1)
-	started := make(chan struct{})
-	go func() {
-		close(started)
-		for {
-			select {
-			case err, ok := <-c.Errors():
-				if !ok {
-					return
-				}
-				assert_noerror(t, err)
-			case msg, ok := <-c.Messages():
-				if !ok {
-					return
-				}
-				gotMessages <- msg
-			}
-		}
-	}()
-	<-started
+	t.Cleanup(func() { _ = c.Close() })
 
 	var newOffset uint64
 	_, newOffset, err = dq.Push(testMessage(int(offset+1), 64))
@@ -266,14 +247,20 @@ func Test_Consumer_startAtEmptyActiveSegment(t *testing.T) {
 	entries01 = readIndexEntries(bytes.NewReader(index01))
 	assert_equal(t, 1, len(entries01))
 
-	gotMessage := <-gotMessages
-	assert_equal(t, fmt.Sprintf("data-%03d", offset+2), gotMessage.Message.PartitionKey)
+	gotMessage := <-c.Messages()
+	assert_equal(t, fmt.Sprintf("data-%03d", offset), gotMessage.Message.PartitionKey)
 
 	_, newOffset, err = dq.Push(testMessage(int(offset+3), 64))
 	assert_noerror(t, err)
 	assert_equal(t, newOffset, offset+3)
 
-	gotMessage = <-gotMessages
+	gotMessage = <-c.Messages()
+	assert_equal(t, fmt.Sprintf("data-%03d", offset+1), gotMessage.Message.PartitionKey)
+
+	gotMessage = <-c.Messages()
+	assert_equal(t, fmt.Sprintf("data-%03d", offset+2), gotMessage.Message.PartitionKey)
+
+	gotMessage = <-c.Messages()
 	assert_equal(t, fmt.Sprintf("data-%03d", offset+3), gotMessage.Message.PartitionKey)
 }
 
@@ -308,7 +295,7 @@ func Test_Consumer_startAtOffset_arbitrary(t *testing.T) {
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
 
-	gotMessages := make(chan MessageWithOffset, 30)
+	gotMessages := make(chan MessageWithOffset, 31)
 
 doneMessages:
 	for {
@@ -325,11 +312,11 @@ doneMessages:
 			assert_noerror(t, err)
 		}
 	}
-	assert_equal(t, 30, len(gotMessages))
+	assert_equal(t, 31, len(gotMessages))
 
-	for x := 0; x < 30; x++ {
+	for x := 0; x < 29; x++ {
 		msg := <-gotMessages
-		assert_equal(t, fmt.Sprintf("data-%d", x+34), msg.Message.PartitionKey)
+		assert_equal(t, fmt.Sprintf("data-%d", x+33), msg.Message.PartitionKey)
 	}
 }
 
@@ -415,7 +402,7 @@ func Test_Consumer_endAtOffset(t *testing.T) {
 	defer func() { _ = c.Close() }()
 
 	var messages []MessageWithOffset
-	var x = 34
+	var x = 33
 messageloop:
 	for {
 		select {
@@ -433,7 +420,7 @@ messageloop:
 			assert_noerror(t, err)
 		}
 	}
-	assert_equal(t, 15, len(messages))
+	assert_equal(t, 16, len(messages))
 	assert_equal(t, "data-48", messages[len(messages)-1].Message.PartitionKey)
 }
 
@@ -461,6 +448,7 @@ func Test_Consumer_endWait(t *testing.T) {
 					Data:         []byte(strings.Repeat("a", 512)),
 				})
 				assert_noerror(t, err)
+				assert_noerror(t, dq.Sync())
 				x++
 			case <-publisherQuit:
 				return
@@ -476,11 +464,16 @@ func Test_Consumer_endWait(t *testing.T) {
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
 
+	seen := make(map[string]struct{})
+
 	for x := 0; x < 128; x++ {
 		publisherPush <- struct{}{}
 		msg, ok := <-c.Messages()
 		assert_equal(t, true, ok)
+		_, alreadySeen := seen[msg.Message.PartitionKey]
+		assert_equal(t, false, alreadySeen, fmt.Sprintf("%q seen twice!", msg.Message.PartitionKey))
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
+		seen[msg.Message.PartitionKey] = struct{}{}
 	}
 }
 

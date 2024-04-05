@@ -81,6 +81,8 @@ func (p *Partition) Write(message Message) (offset uint64, err error) {
 	return
 }
 
+// Vacuum removes old segments from the partitions as defined
+// by the configuration fields RetentionMaxBytes and RetentionMaxAge.
 func (p *Partition) Vacuum() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -129,6 +131,14 @@ func (p *Partition) Vacuum() error {
 		}
 	}
 	return nil
+}
+
+// Sync calls fsync on the underlying handles
+// of the active segment for the partition.
+func (p *Partition) Sync() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.activeSegment.Sync()
 }
 
 func (p *Partition) Close() error {
