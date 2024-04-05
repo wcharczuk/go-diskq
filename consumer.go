@@ -382,6 +382,9 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 	}
 	if !ok {
 		if c.isReadingActiveSegment() {
+			// if we _don't_ have enough data for a read, and we're on the active
+			// segment, and we are set to close on end, return
+			// assumes ok=false,err=nil
 			if c.options.EndBehavior == ConsumerEndBehaviorClose {
 				return
 			}
@@ -390,20 +393,29 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 		} else {
+			// we're not on the active segment, so we _should_ be able to advance
+			// to another segment.
 			err = c.advanceFilesToNextSegment()
 			if err != nil {
 				return
 			}
+			// check if we can read immediately
 			ok, err = c.hasEnoughIndexForRead()
 			if err != nil {
 				return
 			}
-			if !ok && c.isReadingActiveSegment() && c.options.EndBehavior == ConsumerEndBehaviorClose {
-				return
-			}
-			ok, err = c.maybeWaitForIndexWrite()
-			if !ok || err != nil {
-				return
+			// if we have enough index data for a read, spectacular! lets read.
+			if !ok {
+				// we might have kicked over to an empty active segment; we should still close!
+				// this is derrived by hasEnoughIndexForRead returning false, and checking if
+				// we're on the active segment and that the options mean we should close.
+				if c.isReadingActiveSegment() && c.options.EndBehavior == ConsumerEndBehaviorClose {
+					return
+				}
+				ok, err = c.maybeWaitForIndexWrite()
+				if !ok || err != nil {
+					return
+				}
 			}
 		}
 	}

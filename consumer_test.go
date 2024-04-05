@@ -471,7 +471,7 @@ func Test_Consumer_endWait(t *testing.T) {
 		msg, ok := <-c.Messages()
 		assert_equal(t, true, ok)
 		_, alreadySeen := seen[msg.Message.PartitionKey]
-		assert_equal(t, false, alreadySeen)
+		assert_equal(t, false, alreadySeen, fmt.Sprintf("%q seen twice!", msg.Message.PartitionKey))
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
 		seen[msg.Message.PartitionKey] = struct{}{}
 	}
