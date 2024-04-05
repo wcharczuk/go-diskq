@@ -448,6 +448,7 @@ func Test_Consumer_endWait(t *testing.T) {
 					Data:         []byte(strings.Repeat("a", 512)),
 				})
 				assert_noerror(t, err)
+				assert_noerror(t, dq.Sync())
 				x++
 			case <-publisherQuit:
 				return
@@ -468,14 +469,11 @@ func Test_Consumer_endWait(t *testing.T) {
 	for x := 0; x < 128; x++ {
 		publisherPush <- struct{}{}
 		msg, ok := <-c.Messages()
-
 		assert_equal(t, true, ok)
-
 		_, alreadySeen := seen[msg.Message.PartitionKey]
 		assert_equal(t, false, alreadySeen)
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
 		seen[msg.Message.PartitionKey] = struct{}{}
-
 	}
 }
 

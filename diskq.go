@@ -93,13 +93,7 @@ func (dq *Diskq) Vacuum() (err error) {
 // You shouldn't ever need to call this, but it's here if you do need to.
 func (dq *Diskq) Sync() error {
 	for _, p := range dq.partitions {
-		if err := maybeSync(p.activeSegment.index); err != nil {
-			return err
-		}
-		if err := maybeSync(p.activeSegment.timeindex); err != nil {
-			return err
-		}
-		if err := maybeSync(p.activeSegment.data); err != nil {
+		if err := p.Sync(); err != nil {
 			return err
 		}
 	}
