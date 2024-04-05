@@ -2,8 +2,6 @@ package diskq
 
 import (
 	"fmt"
-	"hash/fnv"
-	"io"
 	"os"
 	"time"
 )
@@ -132,27 +130,10 @@ func (dq *Diskq) releaseSentinel() error {
 	return os.Remove(sentinelPath)
 }
 
-func maybeSync(wr io.Writer) error {
-	if typed, ok := wr.(*os.File); ok {
-		return typed.Sync()
-	}
-	return nil
-}
-
-//
-// internal helpers
-//
-
 func (dq *Diskq) partitionForMessage(m Message) *Partition {
 	hashIndex := hashIndexForMessage(m, len(dq.partitions))
 	if hashIndex < 0 || hashIndex >= len(dq.partitions) {
 		return nil
 	}
 	return dq.partitions[hashIndex]
-}
-
-func hashIndexForMessage(m Message, partitions int) int {
-	h := fnv.New32()
-	_, _ = h.Write([]byte(m.PartitionKey))
-	return int(h.Sum32()) % partitions
 }
