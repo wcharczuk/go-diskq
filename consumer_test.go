@@ -428,9 +428,11 @@ func Test_Consumer_endWait(t *testing.T) {
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
+	msb := messageSizeBytes(testMessage(10, 512))
+
 	cfg := Options{
 		PartitionCount:   1,
-		SegmentSizeBytes: 1024,
+		SegmentSizeBytes: 16 * msb,
 	}
 	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
@@ -443,10 +445,7 @@ func Test_Consumer_endWait(t *testing.T) {
 		for {
 			select {
 			case <-publisherPush:
-				_, _, err := dq.Push(Message{
-					PartitionKey: fmt.Sprintf("data-%d", x),
-					Data:         []byte(strings.Repeat("a", 512)),
-				})
+				_, _, err := dq.Push(testMessage(x, 512))
 				assert_noerror(t, err)
 				assert_noerror(t, dq.Sync())
 				x++
@@ -472,7 +471,7 @@ func Test_Consumer_endWait(t *testing.T) {
 		assert_equal(t, true, ok)
 		_, alreadySeen := seen[msg.Message.PartitionKey]
 		assert_equal(t, false, alreadySeen, fmt.Sprintf("%q seen twice!", msg.Message.PartitionKey))
-		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
+		assert_equal(t, fmt.Sprintf("data-%03d", x), msg.Message.PartitionKey)
 		seen[msg.Message.PartitionKey] = struct{}{}
 	}
 }
