@@ -438,6 +438,15 @@ func Test_Consumer_endWait(t *testing.T) {
 	assert_noerror(t, err)
 	defer func() { _ = dq.Close() }()
 
+	buildOffsetsList := func() string {
+		var chunks []string
+		offsets, _ := GetPartitionSegmentStartOffsets(testPath, 0)
+		for _, offset := range offsets {
+			chunks = append(chunks, fmt.Sprint(offset))
+		}
+		return "[" + strings.Join(chunks, ",") + "]"
+	}
+
 	publisherPush := make(chan struct{}, 128)
 	publisherQuit := make(chan struct{})
 	go func() {
@@ -470,7 +479,7 @@ func Test_Consumer_endWait(t *testing.T) {
 		msg, ok := <-c.Messages()
 		assert_equal(t, true, ok)
 		_, alreadySeen := seen[msg.Message.PartitionKey]
-		assert_equal(t, false, alreadySeen, fmt.Sprintf("%q seen twice!", msg.Message.PartitionKey))
+		assert_equal(t, false, alreadySeen, fmt.Sprintf("%q seen twice! offsets=%s", msg.Message.PartitionKey, buildOffsetsList()))
 		assert_equal(t, fmt.Sprintf("data-%03d", x), msg.Message.PartitionKey)
 		seen[msg.Message.PartitionKey] = struct{}{}
 	}
