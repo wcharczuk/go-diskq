@@ -40,6 +40,7 @@ func openPartition(path string, cfg Options, partitionIndex uint32) (*Partition,
 		return nil, fmt.Errorf("diskq; open partition; cannot read intended path: %w", err)
 	}
 	p := &Partition{
+		path:  path,
 		cfg:   cfg,
 		index: partitionIndex,
 	}
