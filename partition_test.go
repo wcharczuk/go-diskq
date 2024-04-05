@@ -7,6 +7,41 @@ import (
 	"time"
 )
 
+func Test_Partition_create(t *testing.T) {
+	testPath, done := tempDir()
+	t.Cleanup(done)
+
+	p, err := NewPartition(testPath, Options{}, 1)
+	assert_noerror(t, err)
+	assert_equal(t, testPath, p.path)
+	assert_equal(t, 1, p.index)
+
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 1)
+	assert_noerror(t, err)
+	assert_equal(t, 1, len(offsets))
+}
+
+func Test_Partition_open(t *testing.T) {
+	testPath, done := tempDir()
+	t.Cleanup(done)
+
+	p, err := NewPartition(testPath, Options{}, 1)
+	assert_noerror(t, err)
+	assert_equal(t, testPath, p.path)
+	assert_equal(t, 1, p.index)
+	assert_noerror(t, p.Close())
+
+	opened, err := NewPartition(testPath, Options{}, 1)
+	assert_noerror(t, err)
+	assert_equal(t, testPath, opened.path)
+	assert_equal(t, 1, opened.index)
+	assert_noerror(t, opened.Close())
+
+	offsets, err := GetPartitionSegmentStartOffsets(testPath, 1)
+	assert_noerror(t, err)
+	assert_equal(t, 1, len(offsets))
+}
+
 func Test_Partition_writeToNewActiveSegment(t *testing.T) {
 	testPath, done := tempDir()
 	defer done()
