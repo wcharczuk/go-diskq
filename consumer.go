@@ -30,7 +30,6 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 			return nil, err
 		}
 	}
-
 	c := &Consumer{
 		path:             path,
 		partitionIndex:   partitionIndex,
@@ -44,8 +43,12 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		indexWriteEvents: make(chan struct{}, 1),
 		dataWriteEvents:  make(chan struct{}, 1),
 	}
+	if err := c.initialize(); err != nil {
+		_ = c.Close()
+		return nil, err
+	}
 	go c.read()
-	<-c.didStart // make sure not to return until the read goroutine is scheduled
+	<-c.didStart
 	return c, nil
 }
 
@@ -80,6 +83,7 @@ type Consumer struct {
 	dataWriteEvents  chan struct{}
 	didStart         chan struct{}
 	done             chan struct{}
+	closed           uint32
 
 	partitionActiveSegmentStartOffset uint64
 	workingSegmentStartOffset         uint64
@@ -118,18 +122,12 @@ func (c *Consumer) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.done == nil {
+	if atomic.LoadUint32(&c.closed) == 1 {
 		return nil
 	}
 
 	close(c.done)
-
-	// NOTE (wc): we have to set this to be nil
-	// 	so that we'll know if we've closed the consumer.
-	//	We should _not_ set read channels to nil because they
-	//	will not show as closed on read by user code if they're
-	//	set to nil.
-	c.done = nil
+	atomic.StoreUint32(&c.closed, 1)
 
 	close(c.messages)
 	close(c.errors)
@@ -160,26 +158,24 @@ func (c *Consumer) read() {
 			c.error(err)
 		}
 	}()
-
 	close(c.didStart)
 	c.didStart = nil
 
-	err := c.initializeRead()
+	ok, err := c.setupFirstRead()
 	if err != nil {
 		c.error(err)
 		return
 	}
+	if !ok {
+		return
+	}
 
-	var ok bool
 	var m Message
 	var messageData []byte
 	for {
-		select {
-		case <-c.done:
+		if atomic.LoadUint32(&c.closed) == 1 {
 			return
-		default:
 		}
-
 		messageData = make([]byte, c.workingSegmentIndex.GetSizeBytes())
 		if _, err = c.dataHandle.Read(messageData); err != nil {
 			c.error(fmt.Errorf("diskq; consumer; cannot read data file: %w", err))
@@ -189,7 +185,9 @@ func (c *Consumer) read() {
 			c.error(fmt.Errorf("diskq; consumer; cannot decode message from data file: %w", err))
 			return
 		}
-
+		if atomic.LoadUint32(&c.closed) == 1 {
+			return
+		}
 		select {
 		case <-c.done:
 			return
@@ -213,7 +211,7 @@ func (c *Consumer) read() {
 	}
 }
 
-func (c *Consumer) initializeRead() (err error) {
+func (c *Consumer) initialize() (err error) {
 	partitionPath := FormatPathForPartition(c.path, c.partitionIndex)
 	offsets, err := GetPartitionSegmentStartOffsets(c.path, c.partitionIndex)
 	if err != nil {
@@ -271,8 +269,10 @@ func (c *Consumer) initializeRead() (err error) {
 			return
 		}
 	}
+	return
+}
 
-	var ok bool
+func (c *Consumer) setupFirstRead() (ok bool, err error) {
 	ok, err = c.readNextSegmentIndex()
 	if !ok || err != nil {
 		return
@@ -297,7 +297,6 @@ func (c *Consumer) initializeRead() (err error) {
 }
 
 func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err error) {
-	println("read next segment index and maybe wait for data writes")
 	ok, err = c.readNextSegmentIndex()
 	if !ok || err != nil {
 		return
@@ -377,15 +376,12 @@ func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
 }
 
 func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
-	println("read next segment index")
 	ok, err = c.hasEnoughIndexForRead()
 	if err != nil {
 		return
 	}
 	if !ok {
-		println("read next segment index > not enough index")
 		if c.isReadingActiveSegment() {
-			println("read next segment index > not enough index > reading active segment")
 			if c.options.EndBehavior == ConsumerEndBehaviorClose {
 				return
 			}
@@ -394,7 +390,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 		} else {
-			println("read next segment index > not enough index > reading older segment")
 			err = c.advanceFilesToNextSegment()
 			if err != nil {
 				return
@@ -404,7 +399,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 			if !ok && c.isReadingActiveSegment() && c.options.EndBehavior == ConsumerEndBehaviorClose {
-				println("read next segment index > not enough index > reading older segment > should end on EOF")
 				return
 			}
 			ok, err = c.maybeWaitForIndexWrite()
@@ -544,7 +538,6 @@ func (c *Consumer) hasEnoughIndexForRead() (ok bool, err error) {
 	indexSizeBytes := indexStat.Size()
 	needIndexBytes := indexPosition + int64(SegmentIndexSizeBytes)
 	ok = indexSizeBytes >= needIndexBytes
-	println("has enough index for read", indexSizeBytes, indexPosition, needIndexBytes, indexSizeBytes >= needIndexBytes)
 	return
 }
 
@@ -604,6 +597,9 @@ func (c *Consumer) getNextSegment(offsets []uint64) (nextWorkingSegment uint64) 
 }
 
 func (c *Consumer) error(err error) {
+	if atomic.LoadUint32(&c.closed) == 1 {
+		return
+	}
 	if err != nil && c.done != nil {
 		select {
 		case <-c.done:
