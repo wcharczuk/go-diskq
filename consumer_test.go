@@ -463,11 +463,19 @@ func Test_Consumer_endWait(t *testing.T) {
 	assert_noerror(t, err)
 	defer func() { _ = c.Close() }()
 
+	seen := make(map[string]struct{})
+
 	for x := 0; x < 128; x++ {
 		publisherPush <- struct{}{}
 		msg, ok := <-c.Messages()
+
 		assert_equal(t, true, ok)
+
+		_, alreadySeen := seen[msg.Message.PartitionKey]
+		assert_equal(t, false, alreadySeen)
 		assert_equal(t, fmt.Sprintf("data-%d", x), msg.Message.PartitionKey)
+		seen[msg.Message.PartitionKey] = struct{}{}
+
 	}
 }
 
