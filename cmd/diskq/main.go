@@ -129,10 +129,10 @@ func commandVacuum() *cli.Command {
 				RetentionMaxBytes: cmd.Int("max-bytes"),
 				RetentionMaxAge:   cmd.Duration("max-age"),
 			})
-			defer func() { _ = dq.Close() }()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = dq.Close() }()
 			if err := dq.Vacuum(); err != nil {
 				return nil
 			}

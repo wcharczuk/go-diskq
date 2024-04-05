@@ -84,19 +84,20 @@ func (p *Partition) Write(message Message) (offset uint64, err error) {
 // Vacuum removes old segments from the partitions as defined
 // by the configuration fields RetentionMaxBytes and RetentionMaxAge.
 func (p *Partition) Vacuum() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.cfg.RetentionMaxAge == 0 && p.cfg.RetentionMaxBytes == 0 {
 		return nil
 	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.activeSegment == nil || p.activeSegment.data == nil {
 		return nil
 	}
 
 	segmentOffsets, err := GetPartitionSegmentStartOffsets(p.path, p.index)
 	if err != nil {
-		return err
+		return fmt.Errorf("diskq; partition; cannot get segment offsets: %w", err)
 	}
 
 	activeOffset := p.activeSegment.startOffset
@@ -108,23 +109,24 @@ func (p *Partition) Vacuum() error {
 		if p.cfg.RetentionMaxAge > 0 {
 			doVacuumSegment, err := p.shouldVacuumSegmentByAge(startOffset)
 			if err != nil {
-				return err
+				return fmt.Errorf("diskq; partition; should vacuum segment by age error: %w", err)
 			}
 			if doVacuumSegment {
 				if err := p.vacuumSegment(startOffset); err != nil {
-					return err
+					return fmt.Errorf("diskq; partition; cannot vacuum offset %d (by age): %w", startOffset, err)
 				}
 				continue
 			}
 		}
+
 		if p.cfg.RetentionMaxBytes > 0 {
 			partitionSizeBytes, err := GetPartitionSizeBytes(p.path, p.index)
 			if err != nil {
-				return err
+				return fmt.Errorf("diskq; partition; vacuum; cannot get partition size: %w", err)
 			}
 			if partitionSizeBytes > p.cfg.RetentionMaxBytes {
 				if err := p.vacuumSegment(startOffset); err != nil {
-					return err
+					return fmt.Errorf("diskq; partition; vacuum; cannot vacuum offset %d (by size): %w", startOffset, err)
 				}
 				continue
 			}
