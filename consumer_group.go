@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
-// OpenConsumerGropu opens a new consumer group.
-func OpenConsumerGroup(path string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
+// OpenConsumerGroup opens a new consumer group.
+//
+// A consumer group reads from all partitions at once, and scans for new partitions
+// if they're added, mapping each partition to an underlying consumer.
+func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	cg := &ConsumerGroup{
-		path:          path,
+		path:          dataPath,
 		options:       options,
 		consumers:     make(map[uint32]*Consumer),
 		consumerExits: make(chan struct{}),
@@ -25,16 +28,17 @@ func OpenConsumerGroup(path string, options ConsumerGroupOptions) (*ConsumerGrou
 
 // ConsumerGroupOptions are extra options for consumer groups.
 type ConsumerGroupOptions struct {
-	OnCreateConsumer func(uint32) (ConsumerOptions, error)
-	OnCloseConsumer  func(uint32) error
+	OptionsForConsumer    func(uint32) (ConsumerOptions, error)
+	OnCloseConsumer       func(uint32) error
+	PartitionScanInterval time.Duration
 }
 
-// ConsumerGroupOptionsFromConsumerOptions returns consumer group options where for each partition
-// a given set of consumer options is returned when a new partition consumer is created.
-func ConsumerGroupOptionsFromConsumerOptions(consumerOptions ConsumerOptions) ConsumerGroupOptions {
-	return ConsumerGroupOptions{
-		OnCreateConsumer: func(_ uint32) (ConsumerOptions, error) { return consumerOptions, nil },
+// PartitionScanIntervalOrDefault returns the partition scan interval or a default.
+func (cg ConsumerGroupOptions) PartitionScanIntervalOrDefault() time.Duration {
+	if cg.PartitionScanInterval > 0 {
+		return cg.PartitionScanInterval
 	}
+	return 5 * time.Second
 }
 
 // ConsumerGroup is a consumer that reads from all partitions at once, and periodically
@@ -110,7 +114,7 @@ func (cg *ConsumerGroup) start() {
 	close(cg.didStart)
 	cg.didStart = nil
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(cg.options.PartitionScanIntervalOrDefault())
 	defer ticker.Stop()
 	if ok := cg.scanForPartitions(); !ok {
 		return
@@ -139,8 +143,8 @@ func (cg *ConsumerGroup) start() {
 }
 
 func (cg *ConsumerGroup) onCreateConsumer(partitionIndex uint32) (ConsumerOptions, error) {
-	if cg.options.OnCreateConsumer != nil {
-		return cg.options.OnCreateConsumer(partitionIndex)
+	if cg.options.OptionsForConsumer != nil {
+		return cg.options.OptionsForConsumer(partitionIndex)
 	}
 	return ConsumerOptions{}, nil
 }
