@@ -138,16 +138,7 @@ func (p *Partition) Vacuum() error {
 func (p *Partition) Sync() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := maybeSync(p.activeSegment.index); err != nil {
-		return err
-	}
-	if err := maybeSync(p.activeSegment.timeindex); err != nil {
-		return err
-	}
-	if err := maybeSync(p.activeSegment.data); err != nil {
-		return err
-	}
-	return nil
+	return p.activeSegment.Sync()
 }
 
 func (p *Partition) Close() error {
