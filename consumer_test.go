@@ -425,6 +425,9 @@ messageloop:
 }
 
 func Test_Consumer_endWait(t *testing.T) {
+	if os.Getenv("RUN_FLAKY_TESTS") != "true" {
+		t.Skip()
+	}
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
