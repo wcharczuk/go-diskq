@@ -39,7 +39,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		errors:           make(chan error, 1),
 		done:             make(chan struct{}),
 		didStart:         make(chan struct{}),
-		didExit:          make(chan struct{}),
+		didExitRead:      make(chan struct{}),
 		advanceEvents:    make(chan struct{}, 1),
 		indexWriteEvents: make(chan struct{}, 1),
 		dataWriteEvents:  make(chan struct{}, 1),
@@ -84,7 +84,7 @@ type Consumer struct {
 	dataWriteEvents  chan struct{}
 	didStart         chan struct{}
 	done             chan struct{}
-	didExit          chan struct{}
+	didExitRead      chan struct{}
 	closed           uint32
 
 	partitionActiveSegmentStartOffset uint64
@@ -127,7 +127,7 @@ func (c *Consumer) Close() error {
 		return nil
 	}
 	close(c.done)
-	<-c.didExit
+	<-c.didExitRead
 	return nil
 }
 
@@ -139,16 +139,13 @@ func (c *Consumer) readDone() {
 	atomic.StoreUint32(&c.closed, 1)
 	close(c.messages)
 	close(c.errors)
-	close(c.advanceEvents)
-	close(c.indexWriteEvents)
-	close(c.dataWriteEvents)
 
 	_ = c.indexHandle.Close()
 	_ = c.dataHandle.Close()
 	if c.fsEvents != nil {
 		_ = c.fsEvents.Close()
 	}
-	close(c.didExit)
+	close(c.didExitRead)
 }
 
 func (c *Consumer) read() {
@@ -302,6 +299,12 @@ func (c *Consumer) readNextSegmentIndexAndMaybeWaitForDataWrites() (ok bool, err
 }
 
 func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
+	defer func() {
+		close(c.advanceEvents)
+		close(c.indexWriteEvents)
+		close(c.dataWriteEvents)
+	}()
+
 	close(started)
 	for {
 		select {
@@ -333,10 +336,7 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 }
 
 func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.indexHandle == nil {
+	if atomic.LoadUint32(&c.closed) == 1 {
 		return
 	}
 	if event.Has(fsnotify.Create) {
