@@ -39,6 +39,7 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		errors:           make(chan error, 1),
 		done:             make(chan struct{}),
 		didStart:         make(chan struct{}),
+		didExit:          make(chan struct{}),
 		advanceEvents:    make(chan struct{}, 1),
 		indexWriteEvents: make(chan struct{}, 1),
 		dataWriteEvents:  make(chan struct{}, 1),
@@ -83,6 +84,7 @@ type Consumer struct {
 	dataWriteEvents  chan struct{}
 	didStart         chan struct{}
 	done             chan struct{}
+	didExit          chan struct{}
 	closed           uint32
 
 	partitionActiveSegmentStartOffset uint64
@@ -121,30 +123,11 @@ func (c *Consumer) Errors() <-chan error {
 func (c *Consumer) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	if atomic.LoadUint32(&c.closed) == 1 {
 		return nil
 	}
-
 	close(c.done)
-	atomic.StoreUint32(&c.closed, 1)
-
-	close(c.messages)
-	close(c.errors)
-	close(c.advanceEvents)
-	close(c.indexWriteEvents)
-	close(c.dataWriteEvents)
-
-	_ = c.indexHandle.Close()
-	c.indexHandle = nil
-
-	_ = c.dataHandle.Close()
-	c.dataHandle = nil
-
-	// we may not be notifying at all!
-	if c.fsEvents != nil {
-		_ = c.fsEvents.Close()
-	}
+	<-c.didExit
 	return nil
 }
 
@@ -152,12 +135,18 @@ func (c *Consumer) Close() error {
 // internal methods
 //
 
+func (c *Consumer) readDone() {
+	atomic.StoreUint32(&c.closed, 1)
+	close(c.messages)
+	close(c.errors)
+	close(c.advanceEvents)
+	close(c.indexWriteEvents)
+	close(c.dataWriteEvents)
+	close(c.didExit)
+}
+
 func (c *Consumer) read() {
-	defer func() {
-		if err := c.Close(); err != nil {
-			c.error(err)
-		}
-	}()
+	defer c.readDone()
 	close(c.didStart)
 	c.didStart = nil
 
