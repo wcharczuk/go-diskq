@@ -142,6 +142,12 @@ func (c *Consumer) readDone() {
 	close(c.advanceEvents)
 	close(c.indexWriteEvents)
 	close(c.dataWriteEvents)
+
+	_ = c.indexHandle.Close()
+	_ = c.dataHandle.Close()
+	if c.fsEvents != nil {
+		_ = c.fsEvents.Close()
+	}
 	close(c.didExit)
 }
 
