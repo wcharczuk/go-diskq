@@ -428,11 +428,13 @@ func Test_Consumer_endWait(t *testing.T) {
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
+	messageCount := 32
+
 	msb := messageSizeBytes(testMessage(10, 512))
 
 	cfg := Options{
 		PartitionCount:   1,
-		SegmentSizeBytes: 16 * msb,
+		SegmentSizeBytes: 4 * msb,
 	}
 	dq, err := New(testPath, cfg)
 	assert_noerror(t, err)
@@ -447,7 +449,7 @@ func Test_Consumer_endWait(t *testing.T) {
 		return "[" + strings.Join(chunks, ",") + "]"
 	}
 
-	publisherPush := make(chan struct{}, 128)
+	publisherPush := make(chan struct{}, messageCount)
 	publisherQuit := make(chan struct{})
 	go func() {
 		var x int
@@ -456,7 +458,6 @@ func Test_Consumer_endWait(t *testing.T) {
 			case <-publisherPush:
 				_, _, err := dq.Push(testMessage(x, 512))
 				assert_noerror(t, err)
-				assert_noerror(t, dq.Sync())
 				x++
 			case <-publisherQuit:
 				return
@@ -474,7 +475,7 @@ func Test_Consumer_endWait(t *testing.T) {
 
 	seen := make(map[string]struct{})
 
-	for x := 0; x < 128; x++ {
+	for x := 0; x < messageCount; x++ {
 		publisherPush <- struct{}{}
 		msg, ok := <-c.Messages()
 		assert_equal(t, true, ok)

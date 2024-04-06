@@ -304,7 +304,6 @@ func (c *Consumer) listenForFilesystemEvents(started chan struct{}) {
 		close(c.indexWriteEvents)
 		close(c.dataWriteEvents)
 	}()
-
 	close(started)
 	for {
 		select {
