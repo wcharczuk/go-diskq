@@ -28,7 +28,38 @@ func Test_Segment_CreateSegment(t *testing.T) {
 }
 
 func Test_Segment_CreateSegment_overwrites(t *testing.T) {
-	t.Skip()
+	tempPath, done := tempDir()
+	defer done()
+
+	err := os.MkdirAll(FormatPathForPartition(tempPath, 0), 0755)
+	assert_noerror(t, err)
+
+	segment, err := CreateSegment(tempPath, 0, 123)
+	assert_noerror(t, err)
+
+	var writtenOffset uint64
+	for x := 0; x < 10; x++ {
+		writtenOffset, _ = segment.writeUnsafe(testMessage(123+x, 512))
+		assert_equal(t, 123+x, writtenOffset)
+	}
+
+	_ = segment.Close()
+
+	segment, err = CreateSegment(tempPath, 0, 123)
+	assert_noerror(t, err)
+
+	for x := 0; x < 10; x++ {
+		writtenOffset, _ = segment.writeUnsafe(testMessage(123+x, 512))
+		assert_equal(t, 123+x, writtenOffset)
+	}
+
+	assert_notnil(t, segment)
+	assert_equal(t, 123, segment.startOffset)
+	assert_equal(t, 133, segment.endOffset)
+	assert_notnil(t, segment.data)
+	assert_notnil(t, segment.index)
+	assert_notnil(t, segment.timeindex)
+	assert_notnil(t, segment.encodeBuffer)
 }
 
 func Test_Segment_OpenSegment_basic(t *testing.T) {
