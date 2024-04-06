@@ -28,7 +28,7 @@ jobs:
         cache: false
 
     - name: Run all tests
-      run: go test -count 10 ./...
+      run: go test -count 10 -v ./...
 
   lint:
     name: "Lint"
