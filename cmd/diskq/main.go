@@ -239,7 +239,7 @@ func commandRead() *cli.Command {
 					EndOffset:     cmd.Uint("end-offset"),
 				}
 				offsetMarkerPath := cmd.String("offset-marker-path")
-				var om diskq.OffsetMarker
+				var om *diskq.OffsetMarker
 				var found bool
 				if offsetMarkerPath != "" {
 					om, found, err = diskq.NewOffsetMarker(offsetMarkerPath, diskq.OffsetMarkerOptions{
@@ -250,9 +250,9 @@ func commandRead() *cli.Command {
 					}
 					defer func() { _ = om.Close() }()
 					if found {
-						debugf(cmd, "diskq; resuming at offset", "partition", flagPartition, "offset", om.Offset())
+						debugf(cmd, "diskq; resuming at offset", "partition", flagPartition, "offset", om.LatestOffset())
 						consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
-						consumerOptions.StartOffset = om.Offset()
+						consumerOptions.StartOffset = om.LatestOffset()
 					} else {
 						debugf(cmd, "diskq; skipping resuming at offset", "partition", flagPartition)
 					}
@@ -271,7 +271,7 @@ func commandRead() *cli.Command {
 							return
 						}
 						if om != nil {
-							om.AddOffset(msg.Offset)
+							om.SetLatestOffset(msg.Offset)
 						}
 						readPrint(msg, flagVerbose)
 					}
@@ -293,12 +293,12 @@ func commandRead() *cli.Command {
 			var consumerGroupOptions diskq.ConsumerGroupOptions
 			offsetMarkerPath := cmd.String("offset-marker-path")
 			var offsetMarkersMu sync.Mutex
-			offsetMarkers := make(map[uint32]diskq.OffsetMarker)
+			offsetMarkers := make(map[uint32]*diskq.OffsetMarker)
 			if offsetMarkerPath != "" {
 				if err := os.MkdirAll(offsetMarkerPath, 0755); err != nil {
 					return err
 				}
-				consumerGroupOptions.OnCreateConsumer = func(partitionIndex uint32) (diskq.ConsumerOptions, error) {
+				consumerGroupOptions.OptionsForConsumer = func(partitionIndex uint32) (diskq.ConsumerOptions, error) {
 					path := filepath.Join(offsetMarkerPath, diskq.FormatPartitionIndexForPath(partitionIndex))
 					om, found, err := diskq.NewOffsetMarker(path, diskq.OffsetMarkerOptions{
 						AutosyncInterval: cmd.Duration("offset-marker-interval"),
@@ -316,9 +316,9 @@ func commandRead() *cli.Command {
 						EndOffset:     cmd.Uint("end-offset"),
 					}
 					if found {
-						debugf(cmd, "diskq; resuming at offset", "partition", partitionIndex, "offset", om.Offset())
+						debugf(cmd, "diskq; resuming at offset", "partition", partitionIndex, "offset", om.LatestOffset())
 						consumerOptions.StartBehavior = diskq.ConsumerStartBehaviorAtOffset
-						consumerOptions.StartOffset = om.Offset()
+						consumerOptions.StartOffset = om.LatestOffset()
 					} else {
 						debugf(cmd, "diskq; skipping resuming at offset", "partition", partitionIndex)
 					}
@@ -328,7 +328,7 @@ func commandRead() *cli.Command {
 					offsetMarkersMu.Lock()
 					defer offsetMarkersMu.Unlock()
 					if om, ok := offsetMarkers[partitionIndex]; ok {
-						debugf(cmd, "diskq; closing offset marker", "partition", partitionIndex, "offset", om.Offset())
+						debugf(cmd, "diskq; closing offset marker", "partition", partitionIndex, "offset", om.LatestOffset())
 						if err := om.Close(); ok {
 							return err
 						}
@@ -338,12 +338,17 @@ func commandRead() *cli.Command {
 				}
 			} else {
 				debugf(cmd, "diskq; starting consumer group with static consumer options")
-				consumerGroupOptions = diskq.ConsumerGroupOptionsFromConsumerOptions(diskq.ConsumerOptions{
-					StartBehavior: startBehavior,
-					StartOffset:   cmd.Uint("start-offset"),
-					EndBehavior:   endBehavior,
-					EndOffset:     cmd.Uint("end-offset"),
-				})
+				consumerGroupOptions = diskq.ConsumerGroupOptions{
+					PartitionScanInterval: 500 * time.Millisecond,
+					OptionsForConsumer: func(_ uint32) (diskq.ConsumerOptions, error) {
+						return diskq.ConsumerOptions{
+							StartBehavior: startBehavior,
+							StartOffset:   cmd.Uint("start-offset"),
+							EndBehavior:   endBehavior,
+							EndOffset:     cmd.Uint("end-offset"),
+						}, nil
+					},
+				}
 			}
 
 			consumerGroup, err := diskq.OpenConsumerGroup(flagPath, consumerGroupOptions)
@@ -361,7 +366,7 @@ func commandRead() *cli.Command {
 					}
 					if offsetMarkerPath != "" {
 						offsetMarkersMu.Lock()
-						offsetMarkers[msg.PartitionIndex].AddOffset(msg.Offset)
+						offsetMarkers[msg.PartitionIndex].SetLatestOffset(msg.Offset)
 						offsetMarkersMu.Unlock()
 					}
 					readPrint(msg, flagVerbose)
