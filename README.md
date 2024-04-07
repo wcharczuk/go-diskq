@@ -10,13 +10,65 @@
 
 `go-diskq` is currently in pre-release testing, and should not be used in production.
 
-# Goals
+# Overview
 
-The goal of `go-diskq` is to provide a single node equivalent of Kafka, similar to what sqlite is to Postgres. `go-diskq` is a library implementation of a streaming system which writes to a local disk.
+The `go-diskq` provides a single node equivalent of Kafka, similar to what sqlite is to an online database like Postgres. Said another way, `go-diskq` is a library implementation of a streaming system which writes to a local disk. It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
 
-It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
+Streams are rooted at a path and can have a single writer at a given time. Think of streams like "topics" in Kafka parlance. Streams are split into partitions, to which messages are assigned by partition keys deterministically. Streams can be vacuumed such that they are held to a maximum size in bytes on disk, or a maximum age of messages. Vacuuming must be initiated manually, usually in a separate ticking goroutine.
 
-A consumer will be notified of a new message on a stream in under a millisecond (often in single digit microseconds depending on the platform), making this useful for realtime applications.
+Consumers will be notified of a new message on a stream partition in under a millisecond (often in single digit microseconds depending on the platform), making this useful for realtime applications. Consumers can mark offsets and resume from last known good offsets. Some helper types, namely `ConsumerGroup` and `MarkedConsumerGroup` can be used to save steps in monitoring for new partitions, and marking consumer progress.
+
+# Example
+
+To create a new producer, set up vacuuming and push messages, start with `diskq.New`:
+```go
+q, err := diskq.New("/tmp/streams/test-stream", diskq.Options{
+  PartitionCount: 3, // can be 1, or can be many
+  RetentionMaxAge: 24 * time.Hour, // only hold 24 hours of messages
+})
+if err != nil {
+  return err
+}
+defer q.Close()
+
+// vacuum automatically every 5 seconds
+go func() {
+  for time.Tick(5 * time.Second) {
+    _ = q.Vacuum()
+  }
+}()
+
+_, _, err = q.Push(diskq.Message{PartitionKey: "customer-00", Data: serialize(...}})
+if err != nil {
+  return err
+}
+```
+
+To then read messages you can use a `ConsumerGroup` to save some steps around enumerating all the partitions and merging the messages for each:
+
+```go
+
+c, err := diskq.OpenConsumerGroup("/tmp/streams/test-stream", diskq.ConsumerGroupOptions{})
+if err != nil {
+  return err
+}
+defer c.Close()
+
+for {
+  select {
+  case msg, ok := <-c.Messages()
+    if !ok {
+      return nil
+    }
+    fmt.Println(string(msg.Data))
+  case err, ok := <-c.Errors():
+    if !ok {
+      return nil
+    }
+    fmt.Fprintf(os.Stderr, "err: %+v\n", err)
+  }
+}
+```
 
 # Stream file organization
 
