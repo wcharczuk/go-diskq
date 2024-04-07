@@ -8,7 +8,7 @@
 
 ## Caveats
 
-`go-diskq` is currently in pre-release testing, and should not be used in production.
+`go-diskq` is currently in preview, and there are no guarantees around the API or the features currently provided. Use at your own risk!
 
 # Overview
 
