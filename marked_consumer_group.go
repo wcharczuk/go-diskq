@@ -6,6 +6,16 @@ import (
 )
 
 // OpenMarkedConsumerGroup returns a new marked consumer group.
+//
+// A marked consumer group lets you open a consumer group with automatic progress tracking. It wraps a standard
+// consumer group with offset markers for each partition at a known path within the diskq data directory.
+//
+// To record the offset for a given message as successfully processed, use the `SetLatestOffset` helper function
+// on the MarkedConsumerGroup struct itself.
+//
+// Optionally, you can enable `AutoSetLatestOffset` on the options for the marked consumer group which will set the
+// latest offset for a message's partition when it's ready automatically. This is not enabled by default because
+// we can't make assumptions about if the message was processed successfully.
 func OpenMarkedConsumerGroup(dataPath, groupName string, options MarkedConsumerGroupOptions) (*MarkedConsumerGroup, error) {
 	markedConsumerGroup := &MarkedConsumerGroup{
 		groupName:     groupName,
@@ -86,11 +96,19 @@ func (m *MarkedConsumerGroup) SetLatestOffset(partitionIndex uint32, offset uint
 }
 
 // Messages returns the messages channel.
+//
+// As with consumer groups, and consumers generally, you should use the
+// `msg, ok := <-mcg.Messages()` form of a channel read on this channel
+// to detect when the channel is closed.
 func (m *MarkedConsumerGroup) Messages() <-chan MessageWithOffset {
 	return m.messages
 }
 
 // Errors returns the errors channel.
+//
+// As with consumer groups, and consumers generally, you should use the
+// `err, ok := <-mcg.Errors()` form of a channel read on this channel
+// to detect when the channel is closed.
 func (m *MarkedConsumerGroup) Errors() <-chan error {
 	return m.errors
 }
@@ -107,6 +125,10 @@ func (m *MarkedConsumerGroup) Close() error {
 	<-m.didExit
 	return nil
 }
+
+//
+// internal methods
+//
 
 func (m *MarkedConsumerGroup) pipeEvents() {
 	defer func() {
