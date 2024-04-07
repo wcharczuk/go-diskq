@@ -8,7 +8,10 @@ import (
 // OpenMarkedConsumerGroup returns a new marked consumer group.
 //
 // A marked consumer group lets you open a consumer group with automatic progress tracking. It wraps a standard
-// consumer group with offset markers for each partition at a known path within the diskq data directory.
+// consumer group with offset markers for each partition at a known path within the diskq data directory. If opening
+// a consumer group with the same name after it's already recorded some offsets, it will resume the consumer for each
+// position at the previously recorded offset, overiding `StartBehavior` and `StartOffset` on the returned consumer options
+// from the consumer group options `OptionsForPartition` delegate.
 //
 // To record the offset for a given message as successfully processed, use the `SetLatestOffset` helper function
 // on the MarkedConsumerGroup struct itself.
