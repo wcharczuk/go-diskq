@@ -11,8 +11,12 @@ import (
 
 // NewFileOffsetMarker creates a new offset marker.
 //
-// Offset markers record consumer progress to a given file exclusively, and will attempt to read a latest offset
+// Offset markers record consumer progress at a given file path, and will attempt to read a latest offset
 // from that path if it already exists.
+//
+// The path parameter is required and should point to the specific path of the file that will be
+// created to store the offset data. It should be unique to the specific consumer (i.e. unique to the
+// diskq path and partition index) of the consumer it tracks.
 func NewOffsetMarker(path string, options OffsetMarkerOptions) (*OffsetMarker, bool, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
