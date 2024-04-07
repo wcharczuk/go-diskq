@@ -421,9 +421,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 }
 
 func (c *Consumer) advanceFilesToNextSegment() (err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	var offsets []uint64
 	offsets, err = GetPartitionSegmentStartOffsets(c.path, c.partitionIndex)
 	if err != nil {
