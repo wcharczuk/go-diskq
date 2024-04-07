@@ -192,6 +192,7 @@ func (c *Consumer) read() {
 		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
 			return
 		}
+
 		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites()
 		if err != nil {
 			c.error(err)
@@ -237,6 +238,7 @@ func (c *Consumer) initialize() (err error) {
 	indexSeekToBytes := int64(SegmentIndexSizeBytes) * int64(relativeOffset)
 
 	if indexSeekToBytes > 0 {
+
 		var indexStat fs.FileInfo
 		indexStat, err = c.indexHandle.Stat()
 		if err != nil {
@@ -265,6 +267,7 @@ func (c *Consumer) initialize() (err error) {
 }
 
 func (c *Consumer) setupFirstRead() (ok bool, err error) {
+
 	ok, err = c.readNextSegmentIndex()
 	if !ok || err != nil {
 		return
@@ -340,7 +343,7 @@ func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
 	}
 	if event.Has(fsnotify.Create) {
 		if strings.HasSuffix(event.Name, ExtIndex) {
-			newSegmentStartAt, err := parseSegmentOffsetFromPath(event.Name)
+			newSegmentStartAt, err := ParseSegmentOffsetFromPath(event.Name)
 			if err != nil {
 				c.error(err)
 				return
@@ -370,11 +373,13 @@ func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
 }
 
 func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
+
 	ok, err = c.hasEnoughIndexForRead()
 	if err != nil {
 		return
 	}
 	if !ok {
+
 		if c.isReadingActiveSegment() {
 			// if we _don't_ have enough data for a read, and we're on the active
 			// segment, and we are set to close on end, return
@@ -387,6 +392,7 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 		} else {
+
 			// we're not on the active segment, so we _should_ be able to advance
 			// to another segment.
 			err = c.advanceFilesToNextSegment()
@@ -406,6 +412,7 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				if c.isReadingActiveSegment() && c.options.EndBehavior == ConsumerEndBehaviorClose {
 					return
 				}
+
 				ok, err = c.maybeWaitForIndexWrite()
 				if !ok || err != nil {
 					return
@@ -413,10 +420,12 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 			}
 		}
 	}
+
 	if err = binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); err != nil {
 		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
 		return
 	}
+
 	return
 }
 
@@ -615,6 +624,7 @@ func (c *Consumer) error(err error) {
 func (c *Consumer) determineEffectiveConsumeAtOffset(offsets []uint64) (uint64, error) {
 	switch c.options.StartBehavior {
 	case ConsumerStartBehaviorAtOffset:
+
 		if c.options.StartOffset < offsets[0] {
 			return 0, fmt.Errorf("diskq; consumer; start at offset before than oldest offset: %d", c.options.StartOffset)
 		}

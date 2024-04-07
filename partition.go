@@ -48,7 +48,7 @@ func openPartition(path string, cfg Options, partitionIndex uint32) (*Partition,
 		return nil, fmt.Errorf("diskq; empty partition directory")
 	}
 
-	lastSegmentStartOffset, err := parseSegmentOffsetFromPath(dirEntries[len(dirEntries)-1].Name())
+	lastSegmentStartOffset, err := ParseSegmentOffsetFromPath(dirEntries[len(dirEntries)-1].Name())
 	if err != nil {
 		return nil, err
 	}

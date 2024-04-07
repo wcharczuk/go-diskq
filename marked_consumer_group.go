@@ -1,12 +1,12 @@
 package diskq
 
 import (
-	"path/filepath"
 	"sync"
+	"sync/atomic"
 )
 
 // OpenMarkedConsumerGroup returns a new marked consumer group.
-func OpenMarkedConsumerGroup(dataPath, groupName string, options ConsumerGroupOptions, offsetMarkerOptions OffsetMarkerOptions) (*MarkedConsumerGroup, error) {
+func OpenMarkedConsumerGroup(dataPath, groupName string, options MarkedConsumerGroupOptions) (*MarkedConsumerGroup, error) {
 	markedConsumerGroup := &MarkedConsumerGroup{
 		groupName:     groupName,
 		offsetMarkers: make(map[uint32]*OffsetMarker),
@@ -17,43 +17,50 @@ func OpenMarkedConsumerGroup(dataPath, groupName string, options ConsumerGroupOp
 		didExit:  make(chan struct{}),
 		didStart: make(chan struct{}),
 	}
-	existingOptionsForConsumer := options.OptionsForConsumer
-	options.OptionsForConsumer = func(partitionIndex uint32) (options ConsumerOptions, err error) {
+	existingOptionsForConsumer := options.ConsumerGroupOptions.OptionsForConsumer
+	options.OptionsForConsumer = func(partitionIndex uint32) (consumerOptions ConsumerOptions, err error) {
 		if existingOptionsForConsumer != nil {
-			options, err = existingOptionsForConsumer(partitionIndex)
+			consumerOptions, err = existingOptionsForConsumer(partitionIndex)
 			if err != nil {
 				return
 			}
 		}
 		var offsetMarker *OffsetMarker
-		offsetMarker, _, err = OpenOrCreateOffsetMarker(FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName, partitionIndex), offsetMarkerOptions)
+		offsetMarker, _, err = OpenOrCreateOffsetMarker(FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName, partitionIndex), options.OffsetMarkerOptions)
 		if err != nil {
 			return
 		}
-
-		markedConsumerGroup.mu.Lock()
+		markedConsumerGroup.offsetMarkersMu.Lock()
 		markedConsumerGroup.offsetMarkers[partitionIndex] = offsetMarker
-		markedConsumerGroup.mu.Unlock()
-
-		offsetMarker.ApplyToConsumerOptions(&options)
-		return options, nil
+		markedConsumerGroup.offsetMarkersMu.Unlock()
+		offsetMarker.ApplyToConsumerOptions(&consumerOptions)
+		return consumerOptions, nil
 	}
 
-	cg, err := OpenConsumerGroup(dataPath, options)
+	cg, err := OpenConsumerGroup(dataPath, options.ConsumerGroupOptions)
 	if err != nil {
 		return nil, err
 	}
 	markedConsumerGroup.cg = cg
+	markedConsumerGroup.options = options
 
 	go markedConsumerGroup.pipeEvents()
 	<-markedConsumerGroup.didStart
 	return markedConsumerGroup, nil
 }
 
+// MarkedConsumerGroupOptions are options for a marked consumer group.
+type MarkedConsumerGroupOptions struct {
+	ConsumerGroupOptions
+	OffsetMarkerOptions
+	AutoSetLatestOffset bool
+}
+
 // MarkedConsumerGroup is a wrapped consumer group that has offset markers automatically configured.
 type MarkedConsumerGroup struct {
-	mu sync.Mutex
-	cg *ConsumerGroup
+	mu      sync.Mutex
+	cg      *ConsumerGroup
+	options MarkedConsumerGroupOptions
 
 	messages chan MessageWithOffset
 	errors   chan error
@@ -61,14 +68,18 @@ type MarkedConsumerGroup struct {
 	didExit  chan struct{}
 	didStart chan struct{}
 
-	groupName     string
-	offsetMarkers map[uint32]*OffsetMarker
+	closed uint32
+
+	groupName       string
+	offsetMarkersMu sync.Mutex
+	offsetMarkers   map[uint32]*OffsetMarker
 }
 
 // SetLatestOffset sets the latest offset for a given partition.
 func (m *MarkedConsumerGroup) SetLatestOffset(partitionIndex uint32, offset uint64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.offsetMarkersMu.Lock()
+	defer m.offsetMarkersMu.Unlock()
+
 	if offsetMarker, ok := m.offsetMarkers[partitionIndex]; ok && offsetMarker != nil {
 		offsetMarker.SetLatestOffset(offset)
 	}
@@ -84,13 +95,26 @@ func (m *MarkedConsumerGroup) Errors() <-chan error {
 	return m.errors
 }
 
+// Close closes the consumer.
+func (m *MarkedConsumerGroup) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if atomic.LoadUint32(&m.closed) == 1 {
+		return nil
+	}
+	atomic.StoreUint32(&m.closed, 1)
+	close(m.done)
+	<-m.didExit
+	return nil
+}
+
 func (m *MarkedConsumerGroup) pipeEvents() {
 	defer func() {
 		close(m.messages)
 		close(m.errors)
+		_ = m.closeOffsetMarkers()
+		_ = m.closeConsumers()
 		close(m.didExit)
-
-		_ = m.Close()
 	}()
 	close(m.didStart)
 
@@ -98,6 +122,9 @@ func (m *MarkedConsumerGroup) pipeEvents() {
 	var ok bool
 	var err error
 	for {
+		if atomic.LoadUint32(&m.closed) == 1 {
+			return
+		}
 		select {
 		case <-m.done:
 			return
@@ -109,9 +136,11 @@ func (m *MarkedConsumerGroup) pipeEvents() {
 			case <-m.done:
 				return
 			case m.messages <- msg:
+				if m.options.AutoSetLatestOffset {
+					m.SetLatestOffset(msg.PartitionIndex, msg.Offset)
+				}
 				continue
 			}
-			// AUTOSET ???
 		case err, ok = <-m.cg.Errors():
 			if !ok {
 				return
@@ -126,6 +155,20 @@ func (m *MarkedConsumerGroup) pipeEvents() {
 	}
 }
 
-func FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName string, partitionIndex uint32) string {
-	return filepath.Join(dataPath, "groups", groupName, FormatPartitionIndexForPath(partitionIndex))
+func (m *MarkedConsumerGroup) closeOffsetMarkers() (err error) {
+	for _, om := range m.offsetMarkers {
+		if err = om.Close(); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (m *MarkedConsumerGroup) closeConsumers() (err error) {
+	for _, om := range m.cg.consumers {
+		if err = om.Close(); err != nil {
+			return
+		}
+	}
+	return
 }

@@ -128,10 +128,28 @@ func messageSizeBytes(m Message) int64 {
 	return int64(data.Len())
 }
 
+func formatTestMessagePartitionKey(index int) string {
+	return fmt.Sprintf("data-%03d-key", index)
+}
+
 func testMessage(index int, dataSize int64) Message {
 	return Message{
 		TimestampUTC: time.Date(2024, 04, 05, 12, 11, 10, 9, time.UTC),
-		PartitionKey: fmt.Sprintf("data-%03d", index),
+		PartitionKey: formatTestMessagePartitionKey(index),
 		Data:         []byte(strings.Repeat("a", int(dataSize))),
 	}
 }
+
+// var testPartitionKeys3 = [3]string{
+// 	"aaa", // 0
+// 	"bbb", // 1
+// 	"111", // 2
+// }
+
+// var testPartitionKeys5 = [5]string{
+// 	"aaa", // 0
+// 	"ddd", // 1
+// 	"bar", // 2
+// 	"cba", // 3
+// 	"fef", // 4
+// }

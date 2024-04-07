@@ -248,20 +248,20 @@ func Test_Consumer_startAtEmptyActiveSegment(t *testing.T) {
 	assert_equal(t, 1, len(entries01))
 
 	gotMessage := <-c.Messages()
-	assert_equal(t, fmt.Sprintf("data-%03d", offset), gotMessage.Message.PartitionKey)
+	assert_equal(t, formatTestMessagePartitionKey(int(offset)), gotMessage.Message.PartitionKey)
 
 	_, newOffset, err = dq.Push(testMessage(int(offset+3), 64))
 	assert_noerror(t, err)
 	assert_equal(t, newOffset, offset+3)
 
 	gotMessage = <-c.Messages()
-	assert_equal(t, fmt.Sprintf("data-%03d", offset+1), gotMessage.Message.PartitionKey)
+	assert_equal(t, formatTestMessagePartitionKey(int(offset+1)), gotMessage.Message.PartitionKey)
 
 	gotMessage = <-c.Messages()
-	assert_equal(t, fmt.Sprintf("data-%03d", offset+2), gotMessage.Message.PartitionKey)
+	assert_equal(t, formatTestMessagePartitionKey(int(offset+2)), gotMessage.Message.PartitionKey)
 
 	gotMessage = <-c.Messages()
-	assert_equal(t, fmt.Sprintf("data-%03d", offset+3), gotMessage.Message.PartitionKey)
+	assert_equal(t, formatTestMessagePartitionKey(int(offset+3)), gotMessage.Message.PartitionKey)
 }
 
 func Test_Consumer_startAtOffset_arbitrary(t *testing.T) {

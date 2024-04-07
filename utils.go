@@ -59,7 +59,13 @@ func FormatStartOffsetForPath(startOffset uint64) string {
 	return fmt.Sprintf("%020d", startOffset)
 }
 
-func parseSegmentOffsetFromPath(path string) (uint64, error) {
+// FormatPathForMarkedConsumerGroupOffsetMarker formats the name of the marked.
+func FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName string, partitionIndex uint32) string {
+	return filepath.Join(dataPath, "groups", groupName, FormatPartitionIndexForPath(partitionIndex))
+}
+
+// ParseSegmentOffsetFromPath parses the segment offset from a given full file path.
+func ParseSegmentOffsetFromPath(path string) (uint64, error) {
 	pathBase := filepath.Base(path)
 	rawStartOffset := strings.TrimSuffix(pathBase, filepath.Ext(pathBase))
 	return strconv.ParseUint(rawStartOffset, 10, 64)
@@ -309,7 +315,7 @@ func GetPartitionSegmentStartOffsets(path string, partitionIndex uint32) (output
 		if !strings.HasSuffix(e.Name(), ExtData) {
 			continue
 		}
-		segmentStartOffset, err := parseSegmentOffsetFromPath(e.Name())
+		segmentStartOffset, err := ParseSegmentOffsetFromPath(e.Name())
 		if err != nil {
 			return nil, err
 		}

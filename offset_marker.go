@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,14 @@ import (
 // You can also call `Sync` on the offset marker yourself to write the latest offset to disk on demand
 // though it is discouraged to do this in favor of using autosync.
 func OpenOrCreateOffsetMarker(path string, options OffsetMarkerOptions) (*OffsetMarker, bool, error) {
+	// ensure the dir for the path ...
+	pathDir := filepath.Dir(path)
+	if _, statErr := os.Stat(pathDir); statErr != nil {
+		if err := os.MkdirAll(pathDir, 0755); err != nil {
+			return nil, false, err
+		}
+	}
+
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, false, err
@@ -119,7 +128,7 @@ type OffsetMarker struct {
 func (om *OffsetMarker) ApplyToConsumerOptions(options *ConsumerOptions) {
 	if atomic.LoadUint32(&om.hasSetLatestOffset) == 1 {
 		options.StartBehavior = ConsumerStartBehaviorAtOffset
-		options.StartOffset = atomic.LoadUint64(&om.latestOffset)
+		options.StartOffset = atomic.LoadUint64(&om.latestOffset) + 1
 	}
 }
 
@@ -166,7 +175,6 @@ func (om *OffsetMarker) Sync() error {
 	if atomic.LoadUint32(&om.hasSetLatestOffset) == 0 {
 		return nil
 	}
-
 	_, err := om.file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
@@ -174,7 +182,8 @@ func (om *OffsetMarker) Sync() error {
 	if err := binary.Write(om.file, binary.LittleEndian, atomic.LoadUint64(&om.latestOffset)); err != nil {
 		return err
 	}
-	return om.file.Sync()
+	return nil
+	// return om.file.Sync()
 }
 
 // Errors returns a channel that will contain errors from writing
