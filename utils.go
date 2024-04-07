@@ -41,16 +41,21 @@ func FormatPathForPartition(path string, partitionIndex uint32) string {
 func FormatPathForSegment(path string, partitionIndex uint32, startOffset uint64) string {
 	return filepath.Join(
 		FormatPathForPartition(path, partitionIndex),
-		formatStartOffsetForPath(startOffset),
+		FormatStartOffsetForPath(startOffset),
 	)
 }
 
 // FormatPartitionIndexForPath returns a partition index as a string.
+//
+// It's used as the final token for the path of a partition on disk.
 func FormatPartitionIndexForPath(partitionIndex uint32) string {
 	return fmt.Sprintf("%06d", partitionIndex)
 }
 
-func formatStartOffsetForPath(startOffset uint64) string {
+// FormatStartOffsetForPath formats a start offset as a string.
+//
+// It's used as the file basename for a segments files (e.g. the index, data or timeindex).
+func FormatStartOffsetForPath(startOffset uint64) string {
 	return fmt.Sprintf("%020d", startOffset)
 }
 

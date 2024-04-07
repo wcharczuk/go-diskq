@@ -40,6 +40,7 @@ type ConsumerGroupOptions struct {
 	// If the callback is not set, it is assumed the consumer group will
 	// read from _all_ partitions.
 	ShouldConsume func(uint32) bool
+
 	// OptionsForConsumer is a callback that given a partition index
 	// expects a ConsumerOptions or error to be returned.
 	//
@@ -52,7 +53,10 @@ type ConsumerGroupOptions struct {
 	// A consumer is closed when the group itself is closed, but can also happen
 	// if the underlying partition the consumer is reading is deleted, though
 	// in practice this should almost never happen.
-	OnCloseConsumer       func(uint32) error
+	OnCloseConsumer func(uint32) error
+
+	// PartitionScanInterval is the interval the consumer group will use
+	// to scan for new partitions.
 	PartitionScanInterval time.Duration
 }
 

@@ -114,6 +114,15 @@ type OffsetMarker struct {
 	exited             chan struct{}
 }
 
+// ApplyToConsumerOptions configures a given consumer options reference
+// to begin where this offset marker has been recorded to have last left off.
+func (om *OffsetMarker) ApplyToConsumerOptions(options *ConsumerOptions) {
+	if atomic.LoadUint32(&om.hasSetLatestOffset) == 1 {
+		options.StartBehavior = ConsumerStartBehaviorAtOffset
+		options.StartOffset = atomic.LoadUint64(&om.latestOffset)
+	}
+}
+
 // LatestOffset returns the latest offset for the offset marker.
 func (om *OffsetMarker) LatestOffset() uint64 {
 	return atomic.LoadUint64(&om.latestOffset)
