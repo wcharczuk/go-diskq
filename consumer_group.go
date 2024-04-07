@@ -10,13 +10,16 @@ import (
 //
 // A consumer group reads from all partitions at once, and scans for new partitions
 // if they're added, mapping each partition to an underlying consumer.
+//
+// ConsumerGroups are _not_ cooperative; they do not automatically split assignment of partitions.
+// If you want to read a subset of partitions, you can configure which partitions the consumer
+// will read using the callback `ShouldConsume` on the ConsumerGroupOptions struct.
 func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	cg := &ConsumerGroup{
 		id:            UUIDv4(),
 		path:          dataPath,
 		options:       options,
 		consumers:     make(map[uint32]*Consumer),
-		offsetMarkers: make(map[uint32]*OffsetMarker),
 		consumerExits: make(chan struct{}),
 		messages:      make(chan MessageWithOffset),
 		errors:        make(chan error),
@@ -30,7 +33,25 @@ func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*Consumer
 
 // ConsumerGroupOptions are extra options for consumer groups.
 type ConsumerGroupOptions struct {
-	OptionsForConsumer    func(uint32) (ConsumerOptions, error)
+	// ShouldConsume is a callback that is called when a partition is
+	// seen, and should return `true` if the partition should be consumed
+	// by this consumer group.
+	//
+	// If the callback is not set, it is assumed the consumer group will
+	// read from _all_ partitions.
+	ShouldConsume func(uint32) bool
+	// OptionsForConsumer is a callback that given a partition index
+	// expects a ConsumerOptions or error to be returned.
+	//
+	// If an error is returned, the entire consumer group fails
+	// and that error is pushed into the errors channel of the consumer group.
+	OptionsForConsumer func(uint32) (ConsumerOptions, error)
+
+	// OnCloseConsumer is a callback that is called when a consumer is closed.
+	//
+	// A consumer is closed when the group itself is closed, but can also happen
+	// if the underlying partition the consumer is reading is deleted, though
+	// in practice this should almost never happen.
 	OnCloseConsumer       func(uint32) error
 	PartitionScanInterval time.Duration
 }
@@ -54,7 +75,6 @@ type ConsumerGroup struct {
 	path            string
 	options         ConsumerGroupOptions
 	consumers       map[uint32]*Consumer
-	offsetMarkers   map[uint32]*OffsetMarker
 	consumerExits   chan struct{}
 	messages        chan MessageWithOffset
 	errors          chan error
@@ -63,20 +83,33 @@ type ConsumerGroup struct {
 	activeConsumers int32
 }
 
+// ID returns a unique identifier for this consumer group.
+func (cg *ConsumerGroup) ID() UUID {
+	return cg.id
+}
+
 // Messages returns a channel that will receive messages from
-// the individual consumers.
+// the individual consumers in the order they're read.
 //
 // You should use the `msg, ok := <-cg.Messages()` form of channel
 // reads when reading this channel to detect if the channel
 // is closed, which would indicate the all of the consumer group
 // consumers have reached the end of their respective partitions
-// with the end behavior of "close".
+// with the consumer end behavior of "close", or if the consumer
+// group itself is closed.
 func (cg *ConsumerGroup) Messages() <-chan MessageWithOffset {
 	return cg.messages
 }
 
 // Errors returns a channel that will receive errors from the
 // individual consumers.
+//
+// You should use the `err, ok := <-cg.Errors()` form of channel
+// reads when reading this channel to detect if the channel
+// is closed, which would indicate all of the consumer group
+// consumers have reached the end of their respective partitions
+// with the consuemr end behavior of "close", or if the consumer
+// group itself is closed.
 func (cg *ConsumerGroup) Errors() <-chan error {
 	return cg.errors
 }
@@ -168,6 +201,11 @@ func (cg *ConsumerGroup) scanForPartitions() (ok bool) {
 		}
 	}
 	for partitionIndex := range partitions {
+		if cg.options.ShouldConsume != nil {
+			if shouldConsume := cg.options.ShouldConsume(partitionIndex); !shouldConsume {
+				continue
+			}
+		}
 		if _, hasConsumer := cg.consumers[partitionIndex]; !hasConsumer {
 			consumerOptions, err := cg.onCreateConsumer(partitionIndex)
 			if err != nil {
