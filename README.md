@@ -44,7 +44,7 @@ if err != nil {
 }
 ```
 
-To then read messages you can use a `ConsumerGroup` to save some steps around enumerating all the partitions and merging the messages for each:
+To then read messages you can use a `diskq.OpenConsumerGroup` to save some steps around enumerating all the partitions and merging the messages for each:
 
 ```go
 
@@ -56,7 +56,7 @@ defer c.Close()
 
 for {
   select {
-  case msg, ok := <-c.Messages()
+  case msg, ok := <-c.Messages():
     if !ok {
       return nil
     }
