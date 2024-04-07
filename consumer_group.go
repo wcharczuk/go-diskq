@@ -12,9 +12,11 @@ import (
 // if they're added, mapping each partition to an underlying consumer.
 func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	cg := &ConsumerGroup{
+		id:            UUIDv4(),
 		path:          dataPath,
 		options:       options,
 		consumers:     make(map[uint32]*Consumer),
+		offsetMarkers: make(map[uint32]*OffsetMarker),
 		consumerExits: make(chan struct{}),
 		messages:      make(chan MessageWithOffset),
 		errors:        make(chan error),
@@ -48,9 +50,11 @@ func (cg ConsumerGroupOptions) PartitionScanIntervalOrDefault() time.Duration {
 // the end behavior in practice.
 type ConsumerGroup struct {
 	mu              sync.Mutex
+	id              UUID
 	path            string
 	options         ConsumerGroupOptions
 	consumers       map[uint32]*Consumer
+	offsetMarkers   map[uint32]*OffsetMarker
 	consumerExits   chan struct{}
 	messages        chan MessageWithOffset
 	errors          chan error
