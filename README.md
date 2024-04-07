@@ -16,7 +16,7 @@ The `go-diskq` provides a single node equivalent of Kafka, similar to what sqlit
 
 Streams are rooted at a path and can have a single writer at a given time. Think of streams like "topics" in Kafka parlance. Streams are split into partitions, to which messages are assigned by partition keys deterministically. Streams can be vacuumed such that they are held to a maximum size in bytes on disk, or a maximum age of messages. Vacuuming must be initiated manually, usually in a separate ticking goroutine.
 
-Consumers will be notified of a new message on a stream partition in under a millisecond (often in single digit microseconds depending on the platform), making this useful for realtime applications. Consumers can mark offsets and resume from last known good offsets. Some helper types, namely `ConsumerGroup` and `MarkedConsumerGroup` can be used to save steps in monitoring for new partitions, and marking consumer progress.
+Consumers will be notified of a new message on a stream partition in under a millisecond (often in single digit microseconds depending on the platform), making this useful for realtime applications. Consumers will block until the `Messages()` channel is read from, holding up reading new indexes from the partition segments until the previous message is read. Consumers can mark offsets and resume from last known good offsets. Some helper types, namely `ConsumerGroup` and `MarkedConsumerGroup` can be used to save steps in monitoring for new partitions, and marking consumer progress.
 
 # Example
 
