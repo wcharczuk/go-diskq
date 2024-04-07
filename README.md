@@ -1,6 +1,9 @@
 `diskq`
 =======
 
+[![Continuous Integration](https://github.com/wcharczuk/go-diskq/actions/workflows/ci.yml/badge.svg)](https://github.com/wcharczuk/go-diskq/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wcharczuk/go-diskq)](https://goreportcard.com/report/github.com/wcharczuk/go-diskq)
+
 ![Diagram](https://github.com/wcharczuk/go-diskq/blob/main/_assets/hero.png)
 
 ## Caveats
