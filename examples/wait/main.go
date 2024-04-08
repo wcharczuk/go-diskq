@@ -78,8 +78,10 @@ func maybeFatal(err error) {
 
 func tempDir() (string, func()) {
 	dir := filepath.Join(os.TempDir(), diskq.UUIDv4().String())
+	fmt.Printf("creating temp directory %v", dir)
 	_ = os.Mkdir(dir, 0755)
 	return dir, func() {
+		fmt.Printf("removing temp directory %v", dir)
 		_ = os.RemoveAll(dir)
 	}
 }
