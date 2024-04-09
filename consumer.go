@@ -238,7 +238,6 @@ func (c *Consumer) initialize() (err error) {
 	indexSeekToBytes := int64(SegmentIndexSizeBytes) * int64(relativeOffset)
 
 	if indexSeekToBytes > 0 {
-
 		var indexStat fs.FileInfo
 		indexStat, err = c.indexHandle.Stat()
 		if err != nil {
@@ -267,7 +266,6 @@ func (c *Consumer) initialize() (err error) {
 }
 
 func (c *Consumer) setupFirstRead() (ok bool, err error) {
-
 	ok, err = c.readNextSegmentIndex()
 	if !ok || err != nil {
 		return
@@ -392,7 +390,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 		} else {
-
 			// we're not on the active segment, so we _should_ be able to advance
 			// to another segment.
 			err = c.advanceFilesToNextSegment()
