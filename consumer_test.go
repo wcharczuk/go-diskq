@@ -2,8 +2,10 @@ package diskq
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -552,4 +554,50 @@ func Test_ParseConsumerEndBehavior(t *testing.T) {
 			assert_equal(t, tc.Expect, actual)
 		}
 	}
+}
+
+func Test_Consumer_tryIndexRead(t *testing.T) {
+	testPath, done := tempDir()
+	t.Cleanup(done)
+
+	f, err := os.Create(filepath.Join(testPath, "tryIndexReadTest"))
+	assert_noerror(t, err)
+
+	err = binary.Write(f, binary.LittleEndian, [3]uint64{333, 444, 555})
+	assert_noerror(t, err)
+
+	readHandle, err := os.OpenFile(filepath.Join(testPath, "tryIndexReadTest"), os.O_RDONLY, 0 /*we aren't going to create the file*/)
+	assert_noerror(t, err)
+
+	c := &Consumer{
+		indexHandle: readHandle,
+	}
+
+	var ok bool
+	ok, err = c.tryIndexRead()
+	assert_noerror(t, err)
+	assert_equal(t, true, ok)
+
+	assert_equal(t, 333, c.workingSegmentIndex.GetOffset())
+	assert_equal(t, 444, c.workingSegmentIndex.GetOffsetBytes())
+	assert_equal(t, 555, c.workingSegmentIndex.GetSizeBytes())
+
+	ok, err = c.tryIndexRead()
+	assert_noerror(t, err)
+	assert_equal(t, false, ok)
+
+	assert_equal(t, 333, c.workingSegmentIndex.GetOffset())
+	assert_equal(t, 444, c.workingSegmentIndex.GetOffsetBytes())
+	assert_equal(t, 555, c.workingSegmentIndex.GetSizeBytes())
+
+	err = binary.Write(f, binary.LittleEndian, [3]uint64{123, 456, 789})
+	assert_noerror(t, err)
+
+	ok, err = c.tryIndexRead()
+	assert_noerror(t, err)
+	assert_equal(t, true, ok)
+
+	assert_equal(t, 123, c.workingSegmentIndex.GetOffset())
+	assert_equal(t, 456, c.workingSegmentIndex.GetOffsetBytes())
+	assert_equal(t, 789, c.workingSegmentIndex.GetSizeBytes())
 }

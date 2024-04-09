@@ -27,13 +27,12 @@ func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Seg
 		return nil, err
 	}
 	return &Segment{
-		startOffset:              startOffset,
-		endOffset:                startOffset,
-		data:                     data,
-		index:                    index,
-		timeindex:                timeindex,
-		segmentIndexEncodeBuffer: new(bytes.Buffer),
-		encodeBuffer:             new(bytes.Buffer),
+		startOffset:  startOffset,
+		endOffset:    startOffset,
+		data:         data,
+		index:        index,
+		timeindex:    timeindex,
+		encodeBuffer: new(bytes.Buffer),
 	}, nil
 }
 
@@ -66,14 +65,13 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 
 	endOffset := startOffset + uint64(endIndexBytes/int64(binary.Size(SegmentIndex{})))
 	return &Segment{
-		data:                     data,
-		index:                    index,
-		timeindex:                timeindex,
-		startOffset:              startOffset,
-		endOffset:                endOffset,
-		endOffsetBytes:           uint64(endOffsetBytes),
-		segmentIndexEncodeBuffer: new(bytes.Buffer),
-		encodeBuffer:             new(bytes.Buffer),
+		data:           data,
+		index:          index,
+		timeindex:      timeindex,
+		startOffset:    startOffset,
+		endOffset:      endOffset,
+		endOffsetBytes: uint64(endOffsetBytes),
+		encodeBuffer:   new(bytes.Buffer),
 	}, nil
 }
 
@@ -88,8 +86,7 @@ type Segment struct {
 	index     io.Writer
 	timeindex io.Writer
 
-	segmentIndexEncodeBuffer *bytes.Buffer
-	encodeBuffer             *bytes.Buffer
+	encodeBuffer *bytes.Buffer
 }
 
 func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
@@ -124,16 +121,8 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	if _, err = s.encodeBuffer.WriteTo(s.data); err != nil {
 		return
 	}
-
-	// NOTE (wc):
-	// 	we do this in (2) phases to prevent situations where
-	// 	an eager consumer will pick up file write notifications on (1/3) or (2/3) of the segment elements being written one at a time
-	//	because binary write is careful to not buffer writes (like we specifically need to.)
-	s.segmentIndexEncodeBuffer.Reset()
-	if err = binary.Write(s.segmentIndexEncodeBuffer, binary.LittleEndian, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes)); err != nil {
-		return
-	}
-	if _, err = s.index.Write(s.segmentIndexEncodeBuffer.Bytes()); err != nil {
+	// NOTE (wc): write the segment index next, which should be written directly all at once.
+	if err = binary.Write(s.index, binary.LittleEndian, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes)); err != nil {
 		return
 	}
 	s.encodeBuffer.Reset()

@@ -371,13 +371,11 @@ func (c *Consumer) handleFilesystemEvent(event fsnotify.Event) (ok bool) {
 }
 
 func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
-
-	ok, err = c.hasEnoughIndexForRead()
+	ok, err = c.tryIndexRead()
 	if err != nil {
 		return
 	}
 	if !ok {
-
 		if c.isReadingActiveSegment() {
 			// if we _don't_ have enough data for a read, and we're on the active
 			// segment, and we are set to close on end, return
@@ -397,7 +395,7 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				return
 			}
 			// check if we can read immediately
-			ok, err = c.hasEnoughIndexForRead()
+			ok, err = c.tryIndexRead()
 			if err != nil {
 				return
 			}
@@ -409,7 +407,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 				if c.isReadingActiveSegment() && c.options.EndBehavior == ConsumerEndBehaviorClose {
 					return
 				}
-
 				ok, err = c.maybeWaitForIndexWrite()
 				if !ok || err != nil {
 					return
@@ -417,12 +414,6 @@ func (c *Consumer) readNextSegmentIndex() (ok bool, err error) {
 			}
 		}
 	}
-
-	if err = binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); err != nil {
-		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
-		return
-	}
-
 	return
 }
 
@@ -474,7 +465,7 @@ func (c *Consumer) maybeWaitForNextOffsetOrAdvance() (ok bool, err error) {
 }
 
 func (c *Consumer) maybeWaitForIndexWrite() (ok bool, err error) {
-	ok, err = c.hasEnoughIndexForRead()
+	ok, err = c.tryIndexRead()
 	if ok || err != nil {
 		return
 	}
@@ -486,7 +477,7 @@ func (c *Consumer) maybeWaitForIndexWrite() (ok bool, err error) {
 			if !ok {
 				return
 			}
-			ok, err = c.hasEnoughIndexForRead()
+			ok, err = c.tryIndexRead()
 			if err != nil {
 				return
 			}
@@ -498,11 +489,10 @@ func (c *Consumer) maybeWaitForIndexWrite() (ok bool, err error) {
 }
 
 func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, err error) {
-	ok, err = c.hasEnoughIndexForRead()
+	ok, err = c.tryIndexRead()
 	if ok || err != nil {
 		return
 	}
-
 	for {
 		select {
 		case <-c.done:
@@ -522,7 +512,7 @@ func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, 
 			if !ok {
 				return
 			}
-			ok, err = c.hasEnoughIndexForRead()
+			ok, err = c.tryIndexRead()
 			if err != nil {
 				return
 			}
@@ -533,20 +523,22 @@ func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, 
 	}
 }
 
-func (c *Consumer) hasEnoughIndexForRead() (ok bool, err error) {
-	var indexStat fs.FileInfo
-	indexStat, err = c.indexHandle.Stat()
-	if err != nil {
+func (c *Consumer) tryIndexRead() (ok bool, err error) {
+	// var currentPosition int64
+	// currentPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
+	// if err != nil {
+	// 	err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
+	// 	return
+	// }
+	if readErr := binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); readErr != nil {
+		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+			// _, err = c.indexHandle.Seek(currentPosition, io.SeekStart)
+			return
+		}
+		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", readErr)
 		return
 	}
-	var indexPosition int64
-	indexPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return
-	}
-	indexSizeBytes := indexStat.Size()
-	needIndexBytes := indexPosition + int64(SegmentIndexSizeBytes)
-	ok = indexSizeBytes >= needIndexBytes
+	ok = true
 	return
 }
 
