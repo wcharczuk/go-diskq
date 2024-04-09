@@ -98,23 +98,30 @@ Within the directory there is an `owner` file if there is a currrent active prod
 
 In addition to the `owner` file there is a `parts` directory that contains sub-directory for each partition, named as a six-zero-padded integer corresponding to the partition index (e.g. `000003`.)
 
-Within each partition sub-directory there are a number of triplets of files, each triplet corresponding to a "segment":
+Within each partition sub-directory there are one or many triplets of files, each triplet corresponding to a "segment":
 - A `.data` file which contains binary representations of each message (more on this representation below.)
-- A `.index` file that contains a stream of triplets of uint64 values: `[offset|bytes_offset_from_start|message_size_bytes]`
-- A `.timeindex` file that contains a stream of pairs of uint64 values: `[offset|timestamp_nanos]`
+- A `.index` file that contains a stream of triplets of uint64 values corresponding to each message at an offset: `[offset|bytes_offset_from_start|message_size_bytes]`
+- A `.timeindex` file that contains a stream of pairs of uint64 values corresponding to each message at an offset: `[offset|timestamp_nanos]`
 
-Each triplet of files for a segment is has a prefix corresponding to the twenty-zero-padded integer of the first offset of that segment, e.g. `00000000000000000025` for a segment that starts with the `25` offset for the partition.
+Each triplet of files for a segment is has a prefix corresponding to the twenty-zero-padded integer of the first offset of that segment, e.g. `00000000000000000025` for a segment that starts with the `25` offset for the partition. The last segment of a partiton is referred to as the "active" segment, and is the segment that is currently being written to.
 
-The last segment of a partiton is referred to as the "active" segment, and is the segment that is currently being written to.
-
-For the message data itself, the binary encoding of the message is as follows:
+Within each segment, individual pieces of data are referred to as Messages. A message is represented on disk in the segment data file as follows:
 - A varuint for the size of the partition key in bytes.
 - A byte array of that given size holding the partition key data.
 - A uint64 timestamp in nanos for the message timestamp.
 - A varuint for the size of the data int bytes.
 - A byte array of that given size holding the partition key data.
 
-As a result a messages minimum size in bytes is typically ~2+1+3+2 or 8 bytes in the data file.
+As a result a messages minimum size in bytes in the data file is typically ~2+1+3+2 or 8 bytes.
+
+# Vacuuming
+
+Because the data for a partition is broken up into configurably sized segments, we can cull old data without interupting publishing to the active segment.
+
+Vacuuming operates on a segment at a time, and as a result there is a tension between creating a lot of segments (with a small segment size) and having tight vacuum tolerances.
+
+When vacuuming evaluates segments, the entire segment must be past the cutoff, as result some extra data typically is kept around until the next vacuum pass that
+would fully cull a given oldest segment.
 
 # `diskq` cli
 
