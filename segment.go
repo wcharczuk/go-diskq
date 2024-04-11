@@ -33,6 +33,8 @@ func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Seg
 		index:        index,
 		timeindex:    timeindex,
 		encodeBuffer: new(bytes.Buffer),
+		indexBuf:     make([]byte, SegmentIndexSizeBytes),
+		timeindexBuf: make([]byte, SegmentTimeIndexSizeBytes),
 	}, nil
 }
 
@@ -72,6 +74,9 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 		endOffset:      endOffset,
 		endOffsetBytes: uint64(endOffsetBytes),
 		encodeBuffer:   new(bytes.Buffer),
+
+		indexBuf:     make([]byte, SegmentIndexSizeBytes),
+		timeindexBuf: make([]byte, SegmentTimeIndexSizeBytes),
 	}, nil
 }
 
@@ -82,9 +87,11 @@ type Segment struct {
 	endOffset      uint64
 	endOffsetBytes uint64
 
-	data      io.Writer
-	index     io.Writer
-	timeindex io.Writer
+	data         io.Writer
+	index        io.Writer
+	indexBuf     []byte
+	timeindex    io.Writer
+	timeindexBuf []byte
 
 	encodeBuffer *bytes.Buffer
 }
@@ -112,7 +119,9 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 
 	// NOTE (wc):
 	//	timeindex writes aren't listened for, so we can just bombs away on them.
-	if err = binary.Write(s.timeindex, binary.LittleEndian, NewSegmentTimeIndex(s.endOffset, message.TimestampUTC)); err != nil {
+
+	_, err = writeSegmentTimeIndex(s.timeindex, s.timeindexBuf, NewSegmentTimeIndex(s.endOffset, message.TimestampUTC))
+	if err != nil {
 		return
 	}
 
@@ -121,8 +130,9 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	if _, err = s.encodeBuffer.WriteTo(s.data); err != nil {
 		return
 	}
-	// NOTE (wc): write the segment index next, which should be written directly all at once.
-	if err = binary.Write(s.index, binary.LittleEndian, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes)); err != nil {
+
+	_, err = writeSegmentIndex(s.index, s.indexBuf, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes))
+	if err != nil {
 		return
 	}
 	s.encodeBuffer.Reset()

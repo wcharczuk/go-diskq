@@ -2,7 +2,6 @@ package diskq
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,18 +30,19 @@ func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (
 		}
 	}
 	c := &Consumer{
-		path:             path,
-		partitionIndex:   partitionIndex,
-		options:          options,
-		fsEvents:         fsEvents,
-		messages:         make(chan MessageWithOffset),
-		errors:           make(chan error, 1),
-		done:             make(chan struct{}),
-		didStart:         make(chan struct{}),
-		didExitRead:      make(chan struct{}),
-		advanceEvents:    make(chan struct{}, 1),
-		indexWriteEvents: make(chan struct{}, 1),
-		dataWriteEvents:  make(chan struct{}, 1),
+		path:                   path,
+		partitionIndex:         partitionIndex,
+		options:                options,
+		fsEvents:               fsEvents,
+		messages:               make(chan MessageWithOffset),
+		errors:                 make(chan error, 1),
+		done:                   make(chan struct{}),
+		didStart:               make(chan struct{}),
+		didExitRead:            make(chan struct{}),
+		advanceEvents:          make(chan struct{}, 1),
+		indexWriteEvents:       make(chan struct{}, 1),
+		dataWriteEvents:        make(chan struct{}, 1),
+		workingSegmentIndexBuf: make([]byte, SegmentIndexSizeBytes),
 	}
 	if err := c.initialize(); err != nil {
 		_ = c.Close()
@@ -90,6 +90,7 @@ type Consumer struct {
 	partitionActiveSegmentStartOffset uint64
 	workingSegmentStartOffset         uint64
 	workingSegmentIndex               SegmentIndex
+	workingSegmentIndexBuf            []byte
 
 	indexHandle *os.File
 	dataHandle  *os.File
@@ -524,15 +525,8 @@ func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, 
 }
 
 func (c *Consumer) tryIndexRead() (ok bool, err error) {
-	// var currentPosition int64
-	// currentPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
-	// if err != nil {
-	// 	err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
-	// 	return
-	// }
-	if readErr := binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); readErr != nil {
+	if readErr := readSegmentIndex(c.indexHandle, c.workingSegmentIndexBuf, &c.workingSegmentIndex); readErr != nil {
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
-			// _, err = c.indexHandle.Seek(currentPosition, io.SeekStart)
 			return
 		}
 		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", readErr)

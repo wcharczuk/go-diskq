@@ -570,7 +570,8 @@ func Test_Consumer_tryIndexRead(t *testing.T) {
 	assert_noerror(t, err)
 
 	c := &Consumer{
-		indexHandle: readHandle,
+		indexHandle:            readHandle,
+		workingSegmentIndexBuf: make([]byte, SegmentIndexSizeBytes),
 	}
 
 	var ok bool

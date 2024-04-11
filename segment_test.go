@@ -80,6 +80,8 @@ func Test_Segment_writeUnsafe(t *testing.T) {
 		index:        indexBuf,
 		timeindex:    timeindexBuf,
 		encodeBuffer: new(bytes.Buffer),
+		indexBuf:     make([]byte, SegmentIndexSizeBytes),
+		timeindexBuf: make([]byte, SegmentTimeIndexSizeBytes),
 	}
 
 	m0 := Message{
