@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Encode writes a message out into a writer.
 func Encode(m Message, wr io.Writer) (err error) {
 	partitionKeyBytes := []byte(m.PartitionKey)
 	err = binary.Write(wr, binary.LittleEndian, uint32(len(partitionKeyBytes)))
@@ -30,6 +31,7 @@ func Encode(m Message, wr io.Writer) (err error) {
 	return
 }
 
+// Decode reads a message out of the reader.
 func Decode(m *Message, r io.Reader) (err error) {
 	var partitionKeySizeBytes uint32
 	err = binary.Read(r, binary.LittleEndian, &partitionKeySizeBytes)

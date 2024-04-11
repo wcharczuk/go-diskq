@@ -66,7 +66,6 @@ func writeSegmentIndex(wr io.Writer, buf []byte, seg SegmentIndex) (n int, err e
 	buf[21] = byte(seg[2] >> 40)
 	buf[22] = byte(seg[2] >> 48)
 	buf[23] = byte(seg[2] >> 56)
-
 	n, err = wr.Write(buf)
 	return
 }

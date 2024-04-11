@@ -105,7 +105,6 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 	}
 
 	offset = s.endOffset
-
 	s.encodeBuffer.Reset()
 
 	// NOTE (wc):
@@ -119,7 +118,6 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 
 	// NOTE (wc):
 	//	timeindex writes aren't listened for, so we can just bombs away on them.
-
 	_, err = writeSegmentTimeIndex(s.timeindex, s.timeindexBuf, NewSegmentTimeIndex(s.endOffset, message.TimestampUTC))
 	if err != nil {
 		return
