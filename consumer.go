@@ -524,15 +524,15 @@ func (c *Consumer) maybeWaitForIndexWriteOrAdvance() (didAdvance bool, ok bool, 
 }
 
 func (c *Consumer) tryIndexRead() (ok bool, err error) {
-	// var currentPosition int64
-	// currentPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
-	// if err != nil {
-	// 	err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
-	// 	return
-	// }
+	var currentPosition int64
+	currentPosition, err = c.indexHandle.Seek(0, io.SeekCurrent)
+	if err != nil {
+		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", err)
+		return
+	}
 	if readErr := binary.Read(c.indexHandle, binary.LittleEndian, &c.workingSegmentIndex); readErr != nil {
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
-			// _, err = c.indexHandle.Seek(currentPosition, io.SeekStart)
+			_, err = c.indexHandle.Seek(currentPosition, io.SeekStart)
 			return
 		}
 		err = fmt.Errorf("diskq; consumer; cannot read next working segment index: %w", readErr)
