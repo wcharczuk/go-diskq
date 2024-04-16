@@ -28,6 +28,14 @@ func FormatPathForPartitions(path string) string {
 	)
 }
 
+// FormatPathForSettings formats a path string for the settings file.
+func FormatPathForSettings(path string) string {
+	return filepath.Join(
+		path,
+		"settings.json",
+	)
+}
+
 // FormatPathForPartition formats a path string for an individual partition
 // within the partitions directory of a stream path.
 func FormatPathForPartition(path string, partitionIndex uint32) string {

@@ -1,26 +1,45 @@
 package diskq
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 )
 
-// New creates or opens a diskq based on a given config.
+// New opens or creates a diskq based on a given path and config.
 //
 // The `Diskq` type itself should be thought of as a producer with
 // exclusive access to write to the data directory named in the config.
 //
-// If the diskq exists on disk, new empty partitions will be created
-// and existing ones opened at their latest offsets for writing.
+// The [path] should be the location on disk you want to hold all
+// the data associated with the diskq; you cannot split the diskq up
+// across multiple disparate paths.
+//
+// The [cfg] should be customized for what you'd like to use for
+// this particular "session" of the diskq producer. You may, for example,
+// change the partition count between sessions, or change the segment size
+// and retention settings. If you'd like to reuse a previous session's options
+// for the diskq, you can use the helper [MaybeReadOptions], and pass the returned
+// options from that helper as the [cfg] argument.
+//
+// If the diskq exists on disk, existing partitions will be opened, and if
+// the configured partition count is greater than the number of existing
+// partitions, new empty partitions will be created. Existing "orphaned" partitions
+// will be left in place until vacuuming potentially removes them.
 func New(path string, cfg Options) (*Diskq, error) {
 	d := &Diskq{
 		id:   UUIDv4(),
 		path: path,
 		cfg:  cfg,
 	}
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return nil, fmt.Errorf("diskq; cannot ensure data directory: %w", err)
+	if _, err := os.Stat(path); err != nil {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, fmt.Errorf("diskq; cannot ensure data directory: %w", err)
+		}
+	}
+	if err := d.writeSettings(); err != nil {
+		return nil, err
 	}
 	if err := d.writeSentinel(); err != nil {
 		return nil, err
@@ -48,6 +67,15 @@ type Diskq struct {
 	partitions []*Partition
 }
 
+// ID returns the id of the diskq producer.
+func (dq *Diskq) ID() UUID { return dq.id }
+
+// Path returns the path of the diskq producer.
+func (dq *Diskq) Path() string { return dq.path }
+
+// Options returns the config of the diskq producer.
+func (dq *Diskq) Options() Options { return dq.cfg }
+
 // Push pushes a new message into the diskq, returning the partition it was written to,
 // the offset it was written to, and any errors that were generated while writing the message.
 func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error) {
@@ -70,13 +98,26 @@ func (dq *Diskq) Push(value Message) (partition uint32, offset uint64, err error
 	return
 }
 
-// Vacuum deletes old segments from all partitions
-// if retention is configured.
+// Vacuum deletes old segments from all partitions if retention is configured.
+//
+// Vacuum will operate on the partitions as they're found on disk; specifically the currently
+// configured partition count is ignored in lieu of the extant partition list.
 func (dq *Diskq) Vacuum() (err error) {
 	if dq.cfg.RetentionMaxAge == 0 && dq.cfg.RetentionMaxBytes == 0 {
 		return
 	}
-	for _, partition := range dq.partitions {
+
+	var partitionIndexes []uint32
+	partitionIndexes, err = GetPartitions(dq.path)
+	if err != nil {
+		return
+	}
+	var partition *Partition
+	for _, partitionIndex := range partitionIndexes {
+		partition, err = openPartition(dq.path, dq.cfg, partitionIndex)
+		if err != nil {
+			return
+		}
 		if err = partition.Vacuum(); err != nil {
 			return
 		}
@@ -136,4 +177,18 @@ func (dq *Diskq) partitionForMessage(m Message) *Partition {
 		return nil
 	}
 	return dq.partitions[hashIndex]
+}
+
+func (dq *Diskq) writeSettings() error {
+	f, err := os.Create(FormatPathForSettings(dq.path))
+	if err != nil {
+		return fmt.Errorf("diskq; cannot create settings file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err = enc.Encode(dq.cfg); err != nil {
+		return fmt.Errorf("diskq; cannot encode settings file: %w", err)
+	}
+	return nil
 }
