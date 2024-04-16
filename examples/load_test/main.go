@@ -19,7 +19,7 @@ func main() {
 	dq, err := diskq.New(tempPath, diskq.Options{
 		PartitionCount:    3,
 		SegmentSizeBytes:  diskq.DefaultSegmentSizeBytes * 2,
-		RetentionMaxBytes: 32 * 1024 * 1024,
+		RetentionMaxBytes: 128 * 1024 * 1024,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -112,7 +112,18 @@ func main() {
 			if err := dq.Vacuum(); err != nil {
 				fmt.Fprintf(os.Stderr, "vacuum error: %v\n", err)
 			} else {
-				fmt.Println("vacuum complete")
+				fmt.Println("vacuum complete path:", tempPath)
+				stats, _ := diskq.GetStats(tempPath)
+				fmt.Printf("stats| offsets=%d total_size=%v sizes=%v age=%v\n",
+					stats.TotalOffsets,
+					formatSizeBytes(stats.SizeBytes),
+					[]string{
+						formatSizeBytes(stats.Partitions[0].SizeBytes),
+						formatSizeBytes(stats.Partitions[1].SizeBytes),
+						formatSizeBytes(stats.Partitions[2].SizeBytes),
+					},
+					stats.Age.Round(time.Second),
+				)
 			}
 		}
 	}()
@@ -149,6 +160,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
 	}
+}
+
+var gigabyte uint64 = 1 << 30
+var megabyte uint64 = 1 << 20
+var kilobyte uint64 = 1 << 10
+
+func formatSizeBytes(size uint64) string {
+	if size > gigabyte {
+		return fmt.Sprintf("%dGiB", size/gigabyte)
+	}
+	if size > megabyte {
+		return fmt.Sprintf("%dMiB", size/megabyte)
+	}
+	if size > kilobyte {
+		return fmt.Sprintf("%dKiB", size/kilobyte)
+	}
+	return fmt.Sprintf("%dB", size)
 }
 
 func tempDir() (string, func()) {

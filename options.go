@@ -48,10 +48,12 @@ type Options struct {
 	// this size a new segment will be created.
 	SegmentSizeBytes int64 `json:"segment_size_bytes,omitempty"`
 	// RetentionMaxBytes is the maximum size of a partition in bytes
-	// as enforced by calling `Vacuum` on the diskq.
+	// as enforced by calling [Diskq.Vacuum]. The size constraint
+	// applies to a single partition, and does not consider the
+	// active partition size.
 	RetentionMaxBytes int64 `json:"retention_max_bytes,omitempty"`
 	// RetentionMaxAge is the maximum age of messages in a partition
-	// as enforced by calling `Vacuum` on the diskq.
+	// as enforced by calling [Diskq.Vacuum].
 	RetentionMaxAge time.Duration `json:"retention_max_age,omitempty"`
 }
 

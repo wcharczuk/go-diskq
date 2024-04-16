@@ -335,7 +335,11 @@ func Test_getPartitionSizeBytes(t *testing.T) {
 	_, _, _ = dq.Push(m)
 	_, _, _ = dq.Push(m)
 
-	sizeBytes, err := GetPartitionSizeBytes(testPath, 0)
+	sizeBytes, err := GetPartitionSizeBytes(testPath, 0, false /*skipActiveSegment*/)
 	assert_noerror(t, err)
 	assert_equal(t, 4*messageSize, sizeBytes)
+
+	sizeBytes, err = GetPartitionSizeBytes(testPath, 0, true /*skipActiveSegment*/)
+	assert_noerror(t, err)
+	assert_equal(t, 3*messageSize, sizeBytes)
 }

@@ -40,7 +40,7 @@ func getPartitionStats(path string, partitionIndex uint32) (*PartitionStats, err
 	output := PartitionStats{
 		PartitionIndex: partitionIndex,
 	}
-	sizeBytes, err := GetPartitionSizeBytes(path, partitionIndex)
+	sizeBytes, err := GetPartitionSizeBytes(path, partitionIndex, false /*skipActiveSegment*/)
 	if err != nil {
 		return nil, fmt.Errorf("diskq; get stats; cannot get partition size bytes: %w", err)
 	}

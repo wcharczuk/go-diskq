@@ -83,7 +83,7 @@ func (p *Partition) Write(message Message) (offset uint64, err error) {
 }
 
 // Vacuum removes old segments from the partitions as defined
-// by the configuration fields RetentionMaxBytes and RetentionMaxAge.
+// by the diskq [Options] fields [Options.RetentionMaxBytes] and [Options.RetentionMaxAge].
 func (p *Partition) Vacuum() error {
 	if p.cfg.RetentionMaxAge == 0 && p.cfg.RetentionMaxBytes == 0 {
 		return nil
@@ -119,9 +119,8 @@ func (p *Partition) Vacuum() error {
 				continue
 			}
 		}
-
 		if p.cfg.RetentionMaxBytes > 0 {
-			partitionSizeBytes, err := GetPartitionSizeBytes(p.path, p.index)
+			partitionSizeBytes, err := GetPartitionSizeBytes(p.path, p.index, true /*skipActiveSegment*/)
 			if err != nil {
 				return fmt.Errorf("diskq; partition; vacuum; cannot get partition size: %w", err)
 			}

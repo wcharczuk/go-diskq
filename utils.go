@@ -288,14 +288,18 @@ func getPartitionsLookup(path string) (map[uint32]struct{}, error) {
 // GetPartitionSizeBytes gets the size in bytes of a partition by path and partition index.
 //
 // It does this by iterating over the segment files for the partition and stat-ing the files.
-func GetPartitionSizeBytes(path string, partitionIndex uint32) (sizeBytes int64, err error) {
+func GetPartitionSizeBytes(path string, partitionIndex uint32, skipActiveSegment bool) (sizeBytes int64, err error) {
 	var offsets []uint64
 	offsets, err = GetPartitionSegmentStartOffsets(path, partitionIndex)
 	if err != nil {
 		return
 	}
 	var info fs.FileInfo
-	for _, offset := range offsets {
+
+	for index, offset := range offsets {
+		if index == len(offsets)-1 && skipActiveSegment {
+			continue
+		}
 		segmentRoot := FormatPathForSegment(path, partitionIndex, offset)
 		info, err = os.Stat(segmentRoot + ExtData)
 		if err != nil {

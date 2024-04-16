@@ -1,6 +1,6 @@
 package diskq
 
-// GetOffset finds and decodes a message by offset for a given partition and returns it.
+// GetOffset finds and decodes a message at a given offset for a given partition.
 func GetOffset(path string, partitionIndex uint32, offset uint64) (m Message, ok bool, err error) {
 	startOffset, ok, err := getPartitionSegmentForOffsetUnsafe(path, partitionIndex, offset)
 	if err != nil || !ok {

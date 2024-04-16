@@ -140,11 +140,19 @@ func testMessage(index int, dataSize int64) Message {
 	}
 }
 
-// var testPartitionKeys3 = [3]string{
-// 	"aaa", // 0
-// 	"bbb", // 1
-// 	"111", // 2
-// }
+func testMessageStable3(index int, dataSize int64) Message {
+	return Message{
+		TimestampUTC: time.Date(2024, 04, 05, 12, 11, 10, 9, time.UTC),
+		PartitionKey: testPartitionKeys3[index%3],
+		Data:         []byte(strings.Repeat("a", int(dataSize))),
+	}
+}
+
+var testPartitionKeys3 = [3]string{
+	"aaa", // 0
+	"bbb", // 1
+	"111", // 2
+}
 
 // var testPartitionKeys5 = [5]string{
 // 	"aaa", // 0
