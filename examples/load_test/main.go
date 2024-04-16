@@ -16,7 +16,11 @@ func main() {
 
 	fmt.Printf("using temp path: %s\n", tempPath)
 
-	dq, err := diskq.New(tempPath, diskq.Options{})
+	dq, err := diskq.New(tempPath, diskq.Options{
+		PartitionCount:    3,
+		SegmentSizeBytes:  diskq.DefaultSegmentSizeBytes * 2,
+		RetentionMaxBytes: 32 * 1024 * 1024,
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return
@@ -45,12 +49,15 @@ func main() {
 	}
 	go func() {
 		for {
-			_, ok := <-c0.Messages()
+			msg, ok := <-c0.Messages()
 			if !ok {
 				fmt.Println("c0 channel closed")
 				return
 			}
-			messagesProcessed[0]++
+			if msg.Offset > 0 && msg.Offset != messagesProcessed[0]+1 {
+				fmt.Printf("!! partition 0 saw wrong offset: %d vs. %d\n", msg.Offset, messagesProcessed[0])
+			}
+			messagesProcessed[0] = msg.Offset
 		}
 	}()
 
@@ -63,12 +70,15 @@ func main() {
 	}
 	go func() {
 		for {
-			_, ok := <-c1.Messages()
+			msg, ok := <-c1.Messages()
 			if !ok {
 				fmt.Println("c1 channel closed")
 				return
 			}
-			messagesProcessed[1]++
+			if msg.Offset > 0 && msg.Offset != messagesProcessed[1]+1 {
+				fmt.Printf("!! partition 1 saw wrong offset: %d vs. %d\n", msg.Offset, messagesProcessed[1])
+			}
+			messagesProcessed[1] = msg.Offset
 		}
 	}()
 
@@ -81,18 +91,31 @@ func main() {
 	}
 	go func() {
 		for {
-			_, ok := <-c2.Messages()
+			msg, ok := <-c2.Messages()
 			if !ok {
 				fmt.Println("c2 channel closed")
 				return
 			}
-			messagesProcessed[2]++
+			if msg.Offset > 0 && msg.Offset != messagesProcessed[2]+1 {
+				fmt.Printf("!! partition 2 saw wrong offset: %d vs. %d\n", msg.Offset, messagesProcessed[2])
+			}
+			messagesProcessed[2] = msg.Offset
 		}
 	}()
 
 	var last = time.Now()
 	lastMessagesPublished := [3]uint64{}
 	lastMessagesProcessed := [3]uint64{}
+
+	go func() {
+		for range time.Tick(10 * time.Second) {
+			if err := dq.Vacuum(); err != nil {
+				fmt.Fprintf(os.Stderr, "vacuum error: %v\n", err)
+			} else {
+				fmt.Println("vacuum complete")
+			}
+		}
+	}()
 
 	go func() {
 		for range time.Tick(5 * time.Second) {
