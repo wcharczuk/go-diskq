@@ -40,14 +40,17 @@ func OpenMarkedConsumerGroup(dataPath, groupName string, options MarkedConsumerG
 			}
 		}
 		var offsetMarker *OffsetMarker
-		offsetMarker, _, err = OpenOrCreateOffsetMarker(FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName, partitionIndex), options.OffsetMarkerOptions)
+		var found bool
+		offsetMarker, found, err = OpenOrCreateOffsetMarker(FormatPathForMarkedConsumerGroupOffsetMarker(dataPath, groupName, partitionIndex), options.OffsetMarkerOptions)
 		if err != nil {
 			return
 		}
 		markedConsumerGroup.offsetMarkersMu.Lock()
 		markedConsumerGroup.offsetMarkers[partitionIndex] = offsetMarker
 		markedConsumerGroup.offsetMarkersMu.Unlock()
-		offsetMarker.ApplyToConsumerOptions(&consumerOptions)
+		if found {
+			offsetMarker.ApplyToConsumerOptions(&consumerOptions)
+		}
 		return consumerOptions, nil
 	}
 

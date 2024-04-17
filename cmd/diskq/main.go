@@ -235,17 +235,6 @@ func commandRead() *cli.Command {
 					diskq.ConsumerEndBehaviorAtOffset.String(),
 				),
 			},
-			&cli.StringFlag{
-				Name:    "group",
-				Aliases: []string{"g"},
-				Value:   "diskq",
-				Usage:   "The name of the consumer group.",
-			},
-			&cli.DurationFlag{
-				Name:  "offset-marker-interval",
-				Value: 5 * time.Second,
-				Usage: "The interval to automatically flush offset marker offsets.",
-			},
 			&cli.BoolFlag{
 				Name:    "verbose",
 				Aliases: []string{"v"},
@@ -263,25 +252,22 @@ func commandRead() *cli.Command {
 				return err
 			}
 			flagPath := cmd.String("path")
-			flagGroupName := cmd.String("group")
 			flagPartition := cmd.Int("partition")
 			flagVerbose := cmd.Bool("verbose")
-			consumerGroup, err := diskq.OpenMarkedConsumerGroup(flagPath, flagGroupName, diskq.MarkedConsumerGroupOptions{
-				ConsumerGroupOptions: diskq.ConsumerGroupOptions{
-					ShouldConsume: func(partitionIndex uint32) bool {
-						if flagPartition == -1 {
-							return true
-						}
-						return partitionIndex == uint32(flagPartition)
-					},
-					OptionsForConsumer: func(_ uint32) (diskq.ConsumerOptions, error) {
-						return diskq.ConsumerOptions{
-							StartBehavior: startBehavior,
-							EndBehavior:   endBehavior,
-						}, nil
-					},
-					PartitionScanInterval: 500 * time.Millisecond,
+			consumerGroup, err := diskq.OpenConsumerGroup(flagPath, diskq.ConsumerGroupOptions{
+				ShouldConsume: func(partitionIndex uint32) bool {
+					if flagPartition == -1 {
+						return true
+					}
+					return partitionIndex == uint32(flagPartition)
 				},
+				OptionsForConsumer: func(_ uint32) (diskq.ConsumerOptions, error) {
+					return diskq.ConsumerOptions{
+						StartBehavior: startBehavior,
+						EndBehavior:   endBehavior,
+					}, nil
+				},
+				PartitionScanInterval: 500 * time.Millisecond,
 			})
 			if err != nil {
 				return err
@@ -295,7 +281,6 @@ func commandRead() *cli.Command {
 						return
 					}
 					readPrint(msg, flagVerbose)
-					consumerGroup.SetLatestOffset(msg.PartitionIndex, msg.Offset)
 				}
 			}()
 
