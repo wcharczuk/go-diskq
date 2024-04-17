@@ -173,9 +173,6 @@ func (dq *Diskq) releaseSentinel() error {
 
 func (dq *Diskq) partitionForMessage(m Message) *Partition {
 	hashIndex := hashIndexForMessage(m, len(dq.partitions))
-	if hashIndex < 0 || hashIndex >= len(dq.partitions) {
-		return nil
-	}
 	return dq.partitions[hashIndex]
 }
 
