@@ -18,11 +18,18 @@ const (
 // first offset it will read from.
 type ConsumerStartBehavior uint8
 
-// ConsumerStartAtBehavior values.
 const (
+	// ConsumerStartBehaviorOldest is a consumer start behavior that
+	// starts a consumer at the absolute oldest offset present on disk.
 	ConsumerStartBehaviorOldest ConsumerStartBehavior = iota
+	// ConsumerStartBehaviorAtOffset is a consumer start behavior that
+	// starts a consumer at a given offset.
 	ConsumerStartBehaviorAtOffset
+	// ConsumerStartBehaviorActiveSegmentOldest is a consumer start behavior that
+	// starts a consumer at the beginning of the active segment for the partition.
 	ConsumerStartBehaviorActiveSegmentOldest
+	// ConsumerStartBehaviorNewest is a consumer start behavior that
+	// starts a consumer at the end of the active segment, or the newest offset.
 	ConsumerStartBehaviorNewest
 )
 
@@ -63,10 +70,17 @@ func ParseConsumerStartBehavior(raw string) (startBehavior ConsumerStartBehavior
 // last offset is read in the active segment.
 type ConsumerEndBehavior uint8
 
-// ConsumerEndBehavior values.
 const (
+	// ConsumerEndBehaviorWait is a consumer end behavior that
+	// will cause the consumer to wait for new offsets when it reaches
+	// the end of the active segment.
 	ConsumerEndBehaviorWait ConsumerEndBehavior = iota
+	// ConsumerEndBehaviorAtOffset is a consumer end behavior that
+	// will cause the consumer to exit when it reaches a given offset.
 	ConsumerEndBehaviorAtOffset
+	// ConsumerEndBehaviorAtOffset is a consumer end behavior that
+	// will cause the consumer to exit when it reaches the
+	// end of the active segment.
 	ConsumerEndBehaviorClose
 )
 

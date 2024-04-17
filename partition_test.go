@@ -11,7 +11,7 @@ func Test_Partition_create(t *testing.T) {
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
-	p, err := NewPartition(testPath, Options{}, 1)
+	p, err := createOrOpenPartition(testPath, Options{}, 1)
 	assert_noerror(t, err)
 	assert_equal(t, testPath, p.path)
 	assert_equal(t, 1, p.index)
@@ -25,13 +25,13 @@ func Test_Partition_open(t *testing.T) {
 	testPath, done := tempDir()
 	t.Cleanup(done)
 
-	p, err := NewPartition(testPath, Options{}, 1)
+	p, err := createOrOpenPartition(testPath, Options{}, 1)
 	assert_noerror(t, err)
 	assert_equal(t, testPath, p.path)
 	assert_equal(t, 1, p.index)
 	assert_noerror(t, p.Close())
 
-	opened, err := NewPartition(testPath, Options{}, 1)
+	opened, err := createOrOpenPartition(testPath, Options{}, 1)
 	assert_noerror(t, err)
 	assert_equal(t, testPath, opened.path)
 	assert_equal(t, 1, opened.index)

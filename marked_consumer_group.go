@@ -5,20 +5,21 @@ import (
 	"sync/atomic"
 )
 
-// OpenMarkedConsumerGroup returns a new marked consumer group.
+// [OpenMarkedConsumerGroup] returns a new marked consumer group that reads a given path.
 //
 // A marked consumer group lets you open a consumer group with automatic progress tracking. It wraps a standard
 // consumer group with offset markers for each partition at a known path within the diskq data directory. If opening
 // a consumer group with the same name after it's already recorded some offsets, it will resume the consumer for each
-// position at the previously recorded offset, overiding `StartBehavior` and `StartOffset` on the returned consumer options
-// from the consumer group options `OptionsForPartition` delegate.
+// position at the previously recorded offset, overiding [ConsumerOptions.StartBehavior] and [ConsumerOptions.StartOffset] on
+// the returned consumer options from the consumer group options [ConsumerGroupOptions.OptionsForPartition] delegate.
 //
-// To record the offset for a given message as successfully processed, use the `SetLatestOffset` helper function
-// on the MarkedConsumerGroup struct itself.
+// To manually record the offset for a given message as successfully processed, use the [MarkedConsumerGroup.SetLatestOffset] helper function
+// on the [MarkedConsumerGroup] struct itself.
 //
-// Optionally, you can enable `AutoSetLatestOffset` on the options for the marked consumer group which will set the
-// latest offset for a message's partition when it's ready automatically. This is not enabled by default because
-// we can't make assumptions about if the message was processed successfully.
+// Alternatively, you can enable [MarkedConsumerGroupOptions.AutoSetLatestOffset] on the options for the marked consumer group which will set the
+// latest offset for a message's partition when it's read automatically by the consumer group before it's passed to your channel receiver.
+// This is not enabled by default because it is dangerous to make assumptions about if the message was processed successfully, but
+// it is implemented here for convenience.
 func OpenMarkedConsumerGroup(dataPath, groupName string, options MarkedConsumerGroupOptions) (*MarkedConsumerGroup, error) {
 	markedConsumerGroup := &MarkedConsumerGroup{
 		groupName:     groupName,
@@ -101,8 +102,10 @@ func (m *MarkedConsumerGroup) SetLatestOffset(partitionIndex uint32, offset uint
 // Messages returns the messages channel.
 //
 // As with consumer groups, and consumers generally, you should use the
-// `msg, ok := <-mcg.Messages()` form of a channel read on this channel
-// to detect when the channel is closed.
+//
+//	msg, ok := <-mcg.Messages()
+//
+// form of a channel read on this channel to detect when the channel is closed.
 func (m *MarkedConsumerGroup) Messages() <-chan MessageWithOffset {
 	return m.messages
 }
@@ -110,8 +113,10 @@ func (m *MarkedConsumerGroup) Messages() <-chan MessageWithOffset {
 // Errors returns the errors channel.
 //
 // As with consumer groups, and consumers generally, you should use the
-// `err, ok := <-mcg.Errors()` form of a channel read on this channel
-// to detect when the channel is closed.
+//
+//	err, ok := <-mcg.Errors()
+//
+// form of a channel read on this channel to detect when the channel is closed.
 func (m *MarkedConsumerGroup) Errors() <-chan error {
 	return m.errors
 }

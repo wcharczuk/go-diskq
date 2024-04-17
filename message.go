@@ -4,12 +4,12 @@ import "time"
 
 // Message is a single element of data written to a diskq.
 //
-// It includes a PartitionKey used to assign it to a partition,
+// It includes a [Message.PartitionKey] used to assign it to a partition,
 // and a TimestampUTC to hold how the message should be ordered
 // within the time index of the partition.
 //
-// When you push a new message, the PartitionKey will be assigned
-// a uuidv4 if unset, and the TimestampUTC will be set to the current
+// When you push a new message, the [Message.PartitionKey] will be assigned
+// a uuidv4 if unset, and the [Message.TimestampUTC] will be set to the current
 // time in utc.
 type Message struct {
 	// PartitionKey is used to assign the message to a partition.

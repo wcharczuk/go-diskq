@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -84,16 +85,46 @@ func commandWrite() *cli.Command {
 	return &cli.Command{
 		Name:  "write",
 		Usage: "Write message data read from STDIN to a given stream.",
-		Flags: append(globalFlags, &cli.IntFlag{
-			Name: "segment-max-size-bytes",
-		}),
+		Flags: append(globalFlags,
+			&cli.IntFlag{
+				Name:  "segment-size-bytes",
+				Usage: "The size of segments in bytes.",
+				Value: diskq.DefaultSegmentSizeBytes,
+			},
+			&cli.IntFlag{
+				Name:  "partition-count",
+				Usage: "The number of diskq partitions.",
+				Value: diskq.DefaultPartitionCount,
+			},
+			&cli.StringFlag{
+				Name:  "partition-key",
+				Usage: "The partition key to use for the message.",
+			},
+			&cli.TimestampFlag{
+				Name:  "timestamp",
+				Usage: "The timestamp to use for the message.",
+			},
+		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			dq, err := diskq.New(cmd.String("path"), diskq.Options{})
+			options, found, err := diskq.MaybeReadOptions(cmd.String("path"))
 			if err != nil {
 				return err
 			}
-			var message diskq.Message
-			if err := json.NewDecoder(os.Stdin).Decode(&message); err != nil {
+			if !found {
+				options.PartitionCount = uint32(cmd.Int("partition-count"))
+				options.SegmentSizeBytes = int64(cmd.Int("segment-size-bytes"))
+			}
+			dq, err := diskq.New(cmd.String("path"), options)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = dq.Close() }()
+			message := diskq.Message{
+				PartitionKey: cmd.String("partition-key"),
+				TimestampUTC: cmd.Timestamp("timestamp"),
+			}
+			message.Data, err = io.ReadAll(os.Stdin)
+			if err != nil {
 				return err
 			}
 			partition, offset, err := dq.Push(message)
@@ -123,10 +154,17 @@ func commandVacuum() *cli.Command {
 			},
 		),
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			dq, err := diskq.New(cmd.String("path"), diskq.Options{
-				RetentionMaxBytes: cmd.Int("max-bytes"),
-				RetentionMaxAge:   cmd.Duration("max-age"),
-			})
+			options, found, err := diskq.MaybeReadOptions(cmd.String("path"))
+			if err != nil {
+				return err
+			}
+			if !found {
+				options.PartitionCount = uint32(cmd.Int("partition-count"))
+				options.SegmentSizeBytes = int64(cmd.Int("segment-size-bytes"))
+				options.RetentionMaxBytes = cmd.Int("max-bytes")
+				options.RetentionMaxAge = cmd.Duration("max-age")
+			}
+			dq, err := diskq.New(cmd.String("path"), options)
 			if err != nil {
 				return err
 			}

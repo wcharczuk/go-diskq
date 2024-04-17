@@ -11,9 +11,9 @@ import (
 // A consumer group reads from all partitions at once, and scans for new partitions
 // if they're added, mapping each partition to an underlying consumer.
 //
-// ConsumerGroups are _not_ cooperative; they do not automatically split assignment of partitions.
+// ConsumerGroups are not cooperative; they do not automatically split assignment of partitions.
 // If you want to read a subset of partitions, you can configure which partitions the consumer
-// will read using the callback `ShouldConsume` on the ConsumerGroupOptions struct.
+// will read using the [ConsumerGroupOptions.ShouldConsume] function.
 func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*ConsumerGroup, error) {
 	cg := &ConsumerGroup{
 		id:            UUIDv4(),
@@ -34,11 +34,11 @@ func OpenConsumerGroup(dataPath string, options ConsumerGroupOptions) (*Consumer
 // ConsumerGroupOptions are extra options for consumer groups.
 type ConsumerGroupOptions struct {
 	// ShouldConsume is a callback that is called when a partition is
-	// seen, and should return `true` if the partition should be consumed
+	// seen, and should return "true" if the partition should be consumed
 	// by this consumer group.
 	//
 	// If the callback is not set, it is assumed the consumer group will
-	// read from _all_ partitions.
+	// read from all partitions.
 	ShouldConsume func(uint32) bool
 
 	// OptionsForConsumer is a callback that given a partition index

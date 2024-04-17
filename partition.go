@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func NewPartition(path string, cfg Options, partitionIndex uint32) (*Partition, error) {
+func createOrOpenPartition(path string, cfg Options, partitionIndex uint32) (*Partition, error) {
 	intendedPath := FormatPathForPartition(path, partitionIndex)
 	if _, err := os.Stat(intendedPath); err != nil {
 		return createPartition(path, cfg, partitionIndex)
@@ -21,7 +21,7 @@ func createPartition(path string, cfg Options, partitionIndex uint32) (*Partitio
 		return nil, fmt.Errorf("diskq; create partition; cannot create intended path: %w", err)
 	}
 
-	segment, err := CreateSegment(path, partitionIndex, 0)
+	segment, err := createSegment(path, partitionIndex, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func openPartition(path string, cfg Options, partitionIndex uint32) (*Partition,
 	if err != nil {
 		return nil, err
 	}
-	segment, err := OpenSegment(path, partitionIndex, uint64(lastSegmentStartOffset))
+	segment, err := openSegment(path, partitionIndex, uint64(lastSegmentStartOffset))
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,10 @@ func openPartition(path string, cfg Options, partitionIndex uint32) (*Partition,
 	return p, nil
 }
 
+// Partition organizes the time ordered series of messages that make up a stream.
+//
+// The partition is responsible for rotating which segment it's writing to actively,
+// as well a partition is responsible for implementing the vacuum steps for itself.
 type Partition struct {
 	mu            sync.Mutex
 	path          string
@@ -161,7 +165,7 @@ func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
-	newActive, err := CreateSegment(p.path, p.index, p.activeSegment.endOffset)
+	newActive, err := createSegment(p.path, p.index, p.activeSegment.endOffset)
 	if err != nil {
 		return err
 	}

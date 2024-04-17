@@ -13,10 +13,10 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// OpenConsumer creates a new consumer for a given config, partition and options.
+// OpenConsumer creates a new consumer for a given path, partition and options.
 //
-// There can be many consumers for a given partition, and you can consume partitions that may be
-// written to by external processes.
+// There can be many consumers for a given partition active at a given time, and you
+// can consume partitions that may be written to by an active producer.
 func OpenConsumer(path string, partitionIndex uint32, options ConsumerOptions) (*Consumer, error) {
 	_, err := os.Stat(FormatPathForPartition(path, partitionIndex))
 	if err != nil {

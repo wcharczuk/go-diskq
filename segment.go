@@ -10,9 +10,7 @@ import (
 	"time"
 )
 
-// CreateSegment creates a segment file at a given data path, for a given partition, and for
-// a given start offset which will be the effective filename.
-func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
+func createSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
 	intendedPathWithoutExtension := FormatPathForSegment(path, partitionIndex, startOffset)
 	data, err := os.OpenFile(intendedPathWithoutExtension+ExtData, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -38,7 +36,7 @@ func CreateSegment(path string, partitionIndex uint32, startOffset uint64) (*Seg
 	}, nil
 }
 
-func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
+func openSegment(path string, partitionIndex uint32, startOffset uint64) (*Segment, error) {
 	intendedPathWithoutExtension := FormatPathForSegment(path, partitionIndex, startOffset)
 	data, err := os.OpenFile(intendedPathWithoutExtension+ExtData, os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
@@ -80,6 +78,9 @@ func OpenSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 	}, nil
 }
 
+// Segment represents an individual block of data within a partition.
+//
+// It is principally responsible for the actual "writing" of data to disk.
 type Segment struct {
 	mu sync.Mutex
 
@@ -140,6 +141,8 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 }
 
 // Sync calls fsync on the (3) underlying file handles for the segment.
+//
+// You should almost never need to call this, but it's here in case you do want to.
 func (s *Segment) Sync() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

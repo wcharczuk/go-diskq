@@ -15,7 +15,7 @@ func Test_Segment_CreateSegment(t *testing.T) {
 	err := os.MkdirAll(FormatPathForPartition(tempPath, 0), 0755)
 	assert_noerror(t, err)
 
-	segment, err := CreateSegment(tempPath, 0, 123)
+	segment, err := createSegment(tempPath, 0, 123)
 	assert_noerror(t, err)
 
 	assert_notnil(t, segment)
@@ -34,7 +34,7 @@ func Test_Segment_CreateSegment_overwrites(t *testing.T) {
 	err := os.MkdirAll(FormatPathForPartition(tempPath, 0), 0755)
 	assert_noerror(t, err)
 
-	segment, err := CreateSegment(tempPath, 0, 123)
+	segment, err := createSegment(tempPath, 0, 123)
 	assert_noerror(t, err)
 
 	var writtenOffset uint64
@@ -45,7 +45,7 @@ func Test_Segment_CreateSegment_overwrites(t *testing.T) {
 
 	_ = segment.Close()
 
-	segment, err = CreateSegment(tempPath, 0, 123)
+	segment, err = createSegment(tempPath, 0, 123)
 	assert_noerror(t, err)
 
 	for x := 0; x < 10; x++ {

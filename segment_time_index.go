@@ -12,6 +12,10 @@ func NewSegmentTimeIndex(offset uint64, timestamp time.Time) SegmentTimeIndex {
 }
 
 // SegmentTimeIndex is a fixed with element of a time index file.
+//
+// It is composed of (2) uint64 values.
+// - 0: the offset of the message this segment refers to.
+// - 1: the timestamp of the message, represented as unix nanos.
 type SegmentTimeIndex [2]uint64
 
 // GetOffset gets the offset the time index entry corresponds to.

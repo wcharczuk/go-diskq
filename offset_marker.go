@@ -12,23 +12,24 @@ import (
 
 // OpenOrCreateOffsetMarker opens or creates a new offset marker.
 //
-// It returns both the offset marker struct itself, and a bool `found` if the offset marker already
-// existed on disk. You can use this bool to control if and how you apply the offset marker to
-// a consumer you're looking to start.
+// It returns both the offset marker struct itself, and a bool "found" if the offset marker
+// was present on disk. You can use this bool to control if and how you apply the offset marker to
+// a consumer you're looking to start. The convenience helper [OffsetMarker.ApplyToConsumerOptions] has
+// been provided for just this use case.
 //
 // The path parameter is required and should point to the specific path of the file that will be
 // created to store the latest offset as a file. It should be unique to the specific consumer
 // (i.e. unique to the diskq path and partition index) of the consumer it tracks.
 //
-// To store the latest offset processed, call `SetLatestOffset` on the offset marker.
-
+// To store the latest offset processed, call [OffsetMarker.SetLatestOffset].
+//
 // The offset isn't written to disk immediately; instead depending on the autosync options
 // provided, it will write on a ticker with a given duration (e.g. every 500 milliseconds)
 // or after N latest offsets are set.
 //
 // The offset is also written to disk regardless of the autosync options when the offset marker is closed.
 //
-// You can also call `Sync` on the offset marker yourself to write the latest offset to disk on demand
+// You can also call [OffsetMarker.Sync] yourself to write the latest offset to disk on demand
 // though it is discouraged to do this in favor of using autosync.
 func OpenOrCreateOffsetMarker(path string, options OffsetMarkerOptions) (*OffsetMarker, bool, error) {
 	// ensure the dir for the path ...

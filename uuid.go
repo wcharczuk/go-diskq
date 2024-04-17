@@ -8,6 +8,7 @@ import (
 // UUID is a unique id.
 type UUID [16]byte
 
+// UUIDv4 returns a new version 4 unique identifier.
 func UUIDv4() (output UUID) {
 	_, _ = rand.Read(output[:])
 	output[6] = (output[6] & 0x0f) | 0x40 // Version 4

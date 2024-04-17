@@ -45,7 +45,7 @@ func New(path string, cfg Options) (*Diskq, error) {
 		return nil, err
 	}
 	for partitionIndex := 0; partitionIndex < int(cfg.PartitionCountOrDefault()); partitionIndex++ {
-		p, err := NewPartition(path, cfg, uint32(partitionIndex))
+		p, err := createOrOpenPartition(path, cfg, uint32(partitionIndex))
 		if err != nil {
 			return nil, err
 		}

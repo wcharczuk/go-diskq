@@ -11,6 +11,12 @@ func NewSegmentIndex(offset uint64, offsetBytes uint64, sizeBytes uint64) Segmen
 }
 
 // SegmentIndex is an individual element of an index file.
+//
+// It is implemented as (3) uint64 values.
+//
+// - 0: is the offset of the message it represents.
+// - 1: the offset from the start of the file the message appears in bytes.
+// - 2: the size of the message in bytes.
 type SegmentIndex [3]uint64
 
 // GetOffset gets the offset this entry corresponds to.
