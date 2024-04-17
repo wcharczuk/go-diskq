@@ -8,10 +8,10 @@ import (
 	"os"
 )
 
-// Read reads a given diskq at a given path, and fills a given
-// destination slice with messages.
+// Read reads a given diskq at a given path, and calls a given function for
+// each message seen.
 //
-// Read is optimized for reading the start offset to the end offset
+// Read is optimized for reading the oldest offset to the newst offset
 // of each partition and not waiting for new messages to be published.
 //
 // As a result, read is useful in situations where you want to bootstrap
