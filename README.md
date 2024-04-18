@@ -12,7 +12,7 @@
 
 # Overview
 
-The `go-diskq` provides a single node equivalent of Kafka, similar to what sqlite is to an online database like Postgres. Said another way, `go-diskq` is a library implementation of a streaming system which writes to a local disk. It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
+`go-diskq` provides a single node equivalent of Kafka, similar to what sqlite is to an online database like Postgres. Said another way, `go-diskq` is a library implementation of a streaming system which writes to a local disk. It supports high throughput writing and reading, such that the process that is producing messages can be decoupled from processes that read messages, and consumption can be triggered through filesystem events.
 
 Streams are rooted at a path and can have a single writer at a given time. Think of streams like "topics" in Kafka parlance. Streams are split into partitions, to which messages are assigned by partition keys deterministically. Streams can be vacuumed such that they are held to a maximum size in bytes on disk, or a maximum age of messages. Vacuuming must be initiated manually, usually in a separate ticking goroutine.
 
