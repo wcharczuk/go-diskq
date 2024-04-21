@@ -133,8 +133,10 @@ func (cg *ConsumerGroup) Close() error {
 	close(cg.done)
 	cg.done = nil
 	for _, consumer := range cg.consumers {
-		_ = cg.onCloseConsumer(consumer.partitionIndex)
-		_ = consumer.Close()
+		if consumer != nil {
+			_ = cg.onCloseConsumer(consumer.partitionIndex)
+			_ = consumer.Close()
+		}
 	}
 	close(cg.messages)
 	close(cg.errors)
