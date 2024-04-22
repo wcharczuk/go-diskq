@@ -72,6 +72,9 @@ type Partition struct {
 	activeSegment *Segment
 }
 
+// Write writes a given message to the active segment of the partition.
+//
+// You will almost never need to call this directly, instead call [Diskq.Push].
 func (p *Partition) Write(message Message) (offset uint64, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -88,6 +91,9 @@ func (p *Partition) Write(message Message) (offset uint64, err error) {
 
 // Vacuum removes old segments from the partitions as defined
 // by the diskq [Options] fields [Options.RetentionMaxBytes] and [Options.RetentionMaxAge].
+//
+// You will almost never need to call this function directly, and should instead
+// call [Diskq.Vacuum].
 func (p *Partition) Vacuum() error {
 	if p.cfg.RetentionMaxAge == 0 && p.cfg.RetentionMaxBytes == 0 {
 		return nil
@@ -139,8 +145,8 @@ func (p *Partition) Vacuum() error {
 	return nil
 }
 
-// Sync calls fsync on the underlying handles
-// of the active segment for the partition.
+// Sync calls fsync on the underlying active segment file
+// handles for the partition.
 func (p *Partition) Sync() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -161,7 +167,7 @@ func (p *Partition) Close() error {
 //
 
 func (p *Partition) shouldCloseActiveSegmentUnsafe(segment *Segment) bool {
-	return int64(segment.endOffsetBytes) >= p.cfg.SegmentSizeBytesOrDefault()
+	return int64(segment.endDataBytes) >= p.cfg.SegmentSizeBytesOrDefault()
 }
 
 func (p *Partition) closeActiveSegmentUnsafe() error {
@@ -178,13 +184,13 @@ func (p *Partition) closeActiveSegmentUnsafe() error {
 //
 
 func (p *Partition) shouldVacuumSegmentByAge(startOffset uint64) (doVacuumSegment bool, err error) {
-	var endTimestamp time.Time
-	endTimestamp, err = GetSegmentOldestTimestamp(p.path, p.index, startOffset)
+	var oldestTimestamp time.Time
+	oldestTimestamp, err = GetSegmentOldestTimestamp(p.path, p.index, startOffset)
 	if err != nil {
 		return
 	}
 	cutoff := time.Now().UTC().Add(-p.cfg.RetentionMaxAge)
-	doVacuumSegment = endTimestamp.Before(cutoff)
+	doVacuumSegment = oldestTimestamp.Before(cutoff)
 	return
 }
 

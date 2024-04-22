@@ -50,7 +50,7 @@ func openSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 	if err != nil {
 		return nil, err
 	}
-	endOffsetBytes, err := data.Seek(0, io.SeekEnd)
+	endDataBytes, err := data.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -65,13 +65,13 @@ func openSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 
 	endOffset := startOffset + uint64(endIndexBytes/int64(binary.Size(SegmentIndex{})))
 	return &Segment{
-		data:           data,
-		index:          index,
-		timeindex:      timeindex,
-		startOffset:    startOffset,
-		endOffset:      endOffset,
-		endOffsetBytes: uint64(endOffsetBytes),
-		encodeBuffer:   new(bytes.Buffer),
+		data:         data,
+		index:        index,
+		timeindex:    timeindex,
+		startOffset:  startOffset,
+		endOffset:    endOffset,
+		endDataBytes: uint64(endDataBytes),
+		encodeBuffer: new(bytes.Buffer),
 
 		indexBuf:     make([]byte, SegmentIndexSizeBytes),
 		timeindexBuf: make([]byte, SegmentTimeIndexSizeBytes),
@@ -84,9 +84,9 @@ func openSegment(path string, partitionIndex uint32, startOffset uint64) (*Segme
 type Segment struct {
 	mu sync.Mutex
 
-	startOffset    uint64
-	endOffset      uint64
-	endOffsetBytes uint64
+	startOffset  uint64
+	endOffset    uint64
+	endDataBytes uint64
 
 	data         io.Writer
 	index        io.Writer
@@ -130,12 +130,12 @@ func (s *Segment) writeUnsafe(message Message) (offset uint64, err error) {
 		return
 	}
 
-	_, err = writeSegmentIndex(s.index, s.indexBuf, NewSegmentIndex(s.endOffset, s.endOffsetBytes, messageSizeBytes))
+	_, err = writeSegmentIndex(s.index, s.indexBuf, NewSegmentIndex(s.endOffset, s.endDataBytes, messageSizeBytes))
 	if err != nil {
 		return
 	}
 	s.encodeBuffer.Reset()
-	s.endOffsetBytes += messageSizeBytes
+	s.endDataBytes += messageSizeBytes
 	s.endOffset++
 	return
 }
@@ -230,5 +230,5 @@ func getSegmentOffset(path string, partitionIndex uint32, startOffset, offset ui
 // OpenSegmentFileForRead opens a segment file with a given extension in "read" mode with the correct flags.
 func OpenSegmentFileForRead(path string, partitionIndex uint32, startOffset uint64, ext string) (*os.File, error) {
 	workingSegmentPath := FormatPathForSegment(path, partitionIndex, startOffset)
-	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0 /*we aren't going to create the file*/)
+	return os.OpenFile(workingSegmentPath+ext, os.O_RDONLY, 0 /*we aren't going to create the file, so we use a zero permissions mask*/)
 }
