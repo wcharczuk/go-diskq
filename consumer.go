@@ -193,7 +193,6 @@ func (c *Consumer) read() {
 		if c.options.EndBehavior == ConsumerEndBehaviorAtOffset && c.workingSegmentIndex.GetOffset() == c.options.EndOffset {
 			return
 		}
-
 		ok, err = c.readNextSegmentIndexAndMaybeWaitForDataWrites()
 		if err != nil {
 			c.error(err)
