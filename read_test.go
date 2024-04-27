@@ -32,9 +32,9 @@ func Test_Read(t *testing.T) {
 		messages = append(messages, msg)
 		return nil
 	}
-	err = Read(testPath, into)
+	err = Read(testPath, 0, into)
 	assert_noerror(t, err)
-	assert_equal(t, 128, len(messages))
+	assert_equal(t, 45, len(messages), "we expect a subset of messages in partition 0")
 }
 
 func Test_Read_stopsOnError(t *testing.T) {
@@ -63,7 +63,7 @@ func Test_Read_stopsOnError(t *testing.T) {
 		messages = append(messages, msg)
 		return fmt.Errorf("this is just a test")
 	}
-	err = Read(testPath, into)
+	err = Read(testPath, 0, into)
 	assert_error(t, err)
 	assert_equal(t, 1, len(messages))
 }

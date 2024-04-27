@@ -38,14 +38,30 @@ func MaybeReadOptions(path string) (cfg Options, found bool, err error) {
 
 // Options are the options for the diskq.
 type Options struct {
-	// PartitionCount is the nubmer of partitions
-	// to create the diskq with.
-	PartitionCount uint32 `json:"partition_count,omitempty"`
-	// SegmentSizeBytes is the size of a segement of
-	// each partition in bytes.
+	// PartitionCount is the nubmer of partitions to split data across.
 	//
-	// When writing new messages, if the partition exceeds
-	// this size a new segment will be created.
+	// Each partition is sized and vacuumed separately, and consumers can be opened
+	// against individual partitions.
+	//
+	// Messages are assigned to partitions based on their partition key, with the goal
+	// of an even distribution of messages given a randomized partition key.
+	//
+	// If unset, a default value of 3 for [Options.PartitionCount] will be used.
+	PartitionCount uint32 `json:"partition_count,omitempty"`
+	// SegmentSizeBytes is the size in bytes of a segement of each partition.
+	//
+	// When writing new messages, if the partition message data file exceeds
+	// this size a new segment will be created, allowing a partition
+	// to be split across multiple files with a general goal for
+	// the size of the data file. Because the segment is closed when
+	// the data file size exceeds the [Options.SegmentSizeBytes] in practice
+	// segments will be slightly larger than the setting when they're closed.
+	//
+	// These segments are also the atomic unit that is deleted when
+	// vacuuming the partition; to have a tigher budget for keeping
+	// partitions near a given size, you should use a smaller segment size.
+	//
+	// If unset, a default value of 32MiB for [Options.SegmentSizeBytes] will be used.
 	SegmentSizeBytes int64 `json:"segment_size_bytes,omitempty"`
 	// RetentionMaxBytes is the maximum size of a partition in bytes
 	// as enforced by calling [Diskq.Vacuum]. The size constraint
@@ -67,6 +83,10 @@ func (c Options) PartitionCountOrDefault() uint32 {
 	return DefaultPartitionCount
 }
 
+// SegmentSizeBytesOrDefault returns the partition segment size
+// in bytes or a default.
+//
+// The default value is 32MiB.
 func (c Options) SegmentSizeBytesOrDefault() int64 {
 	if c.SegmentSizeBytes > 0 {
 		return c.SegmentSizeBytes

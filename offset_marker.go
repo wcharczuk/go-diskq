@@ -103,10 +103,10 @@ type OffsetMarkerOptions struct {
 // committed offset for a given partition.
 //
 // OffsetMarkers do not write to disk immediately, they have configurable
-// parameters for when to sync to disk in the background, reducing the
+// parameters for when to sync to disk in the background automatically, reducing the
 // number of writes to the file.
 //
-// You can alternatively call `Sync` directly on this struct, which will
+// You can alternatively call [OffsetMarker.Sync] directly on this struct, which will
 // write the latest offset to disk.
 type OffsetMarker struct {
 	closeMu            sync.Mutex
@@ -140,13 +140,13 @@ func (om *OffsetMarker) LatestOffset() uint64 {
 
 // SetLatestOffset sets the latest offset for the offset marker.
 //
-// Note that setting the latest offset _does not write the offset to disk_, instead
-// autosync will write the latest offset to disk on a ticker or after N latest offsets are set.
+// Calling this function does not write the offset to disk, instead autosync will write
+// the latest offset to disk on a time based ticker or after certain number of offsets are set.
 //
-// You can also call `Sync` to write the latest offset to disk on demand, but it is recommended
-// that you just let autosync write it to disk for you to save excessive writes.
+// You can also call [OffsetMarker.Sync] to write the latest offset to disk on demand, but it is recommended
+// that you just let autosync write it to disk for you to save extra file writes.
 //
-// The latest offset will be written to disk on Close regardless of the autosync settings.
+// The latest offset will be written to disk on [OffsetMarker.Close] regardless of the autosync settings.
 func (om *OffsetMarker) SetLatestOffset(offset uint64) {
 	atomic.StoreUint32(&om.hasSetLatestOffset, 1)
 	atomic.StoreUint64(&om.latestOffset, offset)
@@ -184,7 +184,6 @@ func (om *OffsetMarker) Sync() error {
 		return err
 	}
 	return nil
-	// return om.file.Sync()
 }
 
 // Errors returns a channel that will contain errors from writing

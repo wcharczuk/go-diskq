@@ -8,40 +8,29 @@ import (
 	"os"
 )
 
-// Read reads a given diskq at a given path, and calls a given function for
-// each message seen.
+// Read reads a given diskq at a given path and a given partition index, and calls a given function for
+// each message read from the partition.
 //
-// Read is optimized for reading the oldest offset to the newst offset
-// of each partition and not waiting for new messages to be published.
+// Read is optimized for reading the oldest offset to the newst offset of the given partition
+// and does not wait for new messages to be published.
 //
 // As a result, read is useful in situations where you want to bootstrap
-// a system from the data on disk quickly.
+// a system from the data on disk quickly, as there is no overhead of pushing into channels.
 //
-// Messages will be read in rotating order through the partitions, that is
-// each partition will read one message at a time, repeating until they're all done reading.
-func Read(path string, fn func(MessageWithOffset) error) error {
-	partitionIndexes, err := GetPartitions(path)
+// It is parameterized by partition because partitions are strictly ordered, but you cannot
+// relate the relative order of many partitions.
+//
+// If you want to read all partitions of a diskq, you can first enumerate the partitions with
+// the helper [GetPartitions], which will return an []uint32 you can pass the elements of as
+// the partitionIndex parameter.
+func Read(path string, partitionIndex uint32, fn func(MessageWithOffset) error) error {
+	partitionIterator, err := newReadPartitionIterator(path, partitionIndex)
 	if err != nil {
 		return err
 	}
-	partitionIterators := make([]*readPartitionIterator, len(partitionIndexes))
-	for x := 0; x < len(partitionIndexes); x++ {
-		partitionIterators[x], err = newReadPartitionIterator(path, partitionIndexes[x])
-		if err != nil {
+	for !partitionIterator.done() {
+		if err = partitionIterator.read(fn); err != nil {
 			return err
-		}
-	}
-	var hasActivePartitions bool = true
-	for hasActivePartitions {
-		hasActivePartitions = false
-		for _, p := range partitionIterators {
-			if p.done() {
-				continue
-			}
-			hasActivePartitions = true
-			if err = p.read(fn); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
