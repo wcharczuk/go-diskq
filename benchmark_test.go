@@ -1,6 +1,9 @@
 package diskq
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func Benchmark_Producer(b *testing.B) {
 	testPath, done := tempDir()
@@ -14,6 +17,26 @@ func Benchmark_Producer(b *testing.B) {
 	b.Cleanup(func() { _ = dq.Close() })
 	for x := 0; x < b.N; x++ {
 		_, _, _ = dq.Push(testMessage(x, 32))
+	}
+}
+
+func Benchmark_MessageCodec_Encode(b *testing.B) {
+	buf := new(bytes.Buffer)
+	for x := 0; x < b.N; x++ {
+		_ = Encode(testMessage(x, 256), buf)
+	}
+}
+
+func Benchmark_MessageCodec_Decode(b *testing.B) {
+	buf := new(bytes.Buffer)
+	for x := 0; x < b.N; x++ {
+		_ = Encode(testMessage(x, 256), buf)
+	}
+	reader := bytes.NewReader(buf.Bytes())
+	b.ResetTimer()
+	for x := 0; x < b.N; x++ {
+		var m Message
+		_ = Decode(&m, reader)
 	}
 }
 
@@ -63,5 +86,4 @@ func benchmarkConsumer(b *testing.B, messageCount int) {
 			}
 		}
 	}
-
 }
